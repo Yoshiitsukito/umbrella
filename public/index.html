@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="mn">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>UMBRELLA Corporation</title>
+    <link rel="icon" type="image/png" href="/umbrella-logo.png" />
+    <script>
+      document.documentElement.dataset.theme = localStorage.getItem("holo-theme") === "light" ? "light" : "dark";
+      if (/UMBRELLA-App/.test(navigator.userAgent)) document.documentElement.classList.add("is-app");
+    </script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="login" id="login" hidden>
+      <form class="login-card" id="login-form" autocomplete="on">
+        <img class="login-logo" src="/umbrella-logo.png" alt="" width="96" height="96" />
+        <p class="login-brand">U.MBRELLA</p>
+        <p class="login-sub">Corporation <em>Security Access</em></p>
+        <label>Нэвтрэх нэр<input class="login-code" name="username" autocomplete="username" autocapitalize="characters" spellcheck="false" maxlength="4" placeholder="4 оронтой код" required autofocus /></label>
+        <label>Нууц үг<input name="password" type="password" autocomplete="current-password" required /></label>
+        <p class="form-error" id="login-error" role="alert"></p>
+        <button class="primary" type="submit">Нэвтрэх</button>
+        <p class="login-note">Зөвхөн зөвшөөрөлтэй ажилтанд. Бүх оролдлого бүртгэгдэнэ.</p>
+      </form>
+    </div>
+    <div class="shell" id="shell" hidden>
+      <header class="top">
+        <div class="brand">
+          <img class="brand-logo" src="/umbrella-logo.png" alt="" width="48" height="48" />
+          <span class="brand-text">
+            <span class="brand-mark">UMBRELLA</span>
+            <span class="brand-sub">Corporation</span>
+          </span>
+        </div>
+        <div class="top-left">
+          <p class="place" id="place">Байршил тодорхойлж байна</p>
+          <div class="seg-clock" id="clock" role="timer">
+            <div class="seg-time" id="seg-time"></div>
+            <div class="seg-date" id="seg-date"></div>
+          </div>
+        </div>
+        <div class="top-actions">
+          <p class="alert-line" id="alert-line"></p>
+          <button type="button" class="top-icon" id="theme-btn" aria-pressed="false"></button>
+          <button type="button" class="top-icon" id="notify-btn"></button>
+          <button type="button" class="top-icon" id="logout-btn" aria-label="Гарах" data-tip="Гарах">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H14"/><path d="M10 12h10M16.5 8l4 4-4 4"/></svg>
+          </button>
+          <button type="button" class="menu-btn" id="menu-btn" aria-label="Цэс" aria-expanded="false" aria-controls="nav">
+            <span></span><span></span><span></span>
+          </button>
+        </div>
+      </header>
+      <aside class="rail">
+        <nav class="nav" id="nav" aria-label="Цэс">
+          <button type="button" data-view="users" data-role="admin" aria-label="Бүх хэрэглэгч" data-tip="Бүх хэрэглэгч" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.3"/><path d="M2.8 19.5a6.2 6.2 0 0 1 12.4 0"/><path d="M15.2 4.9a3.3 3.3 0 0 1 0 6.2M17.6 13.6a6.2 6.2 0 0 1 3.6 5.9"/></svg>
+          </button>
+          <button type="button" data-view="card" data-role="admin" aria-label="Карт засах" data-tip="Карт засах" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2"/><circle cx="8.5" cy="10.8" r="2.3"/><path d="M5 16.2a3.7 3.7 0 0 1 7 0M14.5 10h4.5M14.5 13.5h4.5"/></svg>
+          </button>
+          <button type="button" data-view="whiteking" data-role="admin" class="nav-wk" aria-label="White Queen" data-tip="White Queen" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="3.6" r="1.3"/><path d="M5.5 7.5l2.6 6h7.8l2.6-6-3.4 2.6L12 5.6l-3.1 4.5z"/><path d="M8.6 13.5L7.8 18h8.4l-.8-4.5"/><path d="M6.5 21h11M7.5 18h9"/></svg>
+          </button>
+          <button type="button" data-view="home" data-role="user hr kitchen" aria-label="Нүүр" data-tip="Нүүр">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11L12 4l8.5 7"/><path d="M6 9.5V20h12V9.5"/><path d="M10 20v-5h4v5"/></svg>
+          </button>
+          <button type="button" data-view="weather" data-role="user hr kitchen" aria-label="Цаг агаар" data-tip="Цаг агаар">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2.8v1.4M3.3 4.8l1 1M2 9.5h1.4M12.7 4.8l-1 1"/><path d="M5.3 11a3.5 3.5 0 0 1 6.3-2.8"/><path d="M9 20h8.5a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.4 1.6A2.7 2.7 0 0 0 9 20z"/></svg>
+          </button>
+          <button type="button" data-view="attendance" data-role="user hr kitchen" aria-label="Ирц" data-tip="Ирц">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M8.5 13l2.5 2.5 4.5-5"/></svg>
+          </button>
+          <button type="button" data-view="vision" data-role="user hr kitchen" aria-label="Камер" data-tip="Камер">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h3l1.5-2.5h6L16.5 7h3A1.5 1.5 0 0 1 21 8.5v10a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/><circle cx="12" cy="13" r="3.8"/></svg>
+          </button>
+          <button type="button" data-view="health" data-role="user hr kitchen" aria-label="Эрүүл мэнд" data-tip="Эрүүл мэнд">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/><path d="M7.5 12.5h2.3l1.4-2.4 2 4.4 1.3-2h2"/></svg>
+          </button>
+          <button type="button" data-view="ask" data-role="user hr kitchen" class="nav-rk" aria-label="Red King" data-tip="Red King">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8l4.2 4L12 5l4.3 7 4.2-4-1.8 10.5H5.3z"/><path d="M5.5 21h13"/></svg>
+          </button>
+          <button type="button" data-view="menu" data-role="kitchen" aria-label="Хоолны цэс" data-tip="Хоолны цэс" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v7a2 2 0 0 0 4 0V3M8 10v11M16 21V3c-2.2 0-3.5 2.5-3.5 6.5S14 13 16 13"/></svg>
+          </button>
+          <button type="button" data-view="staff" data-role="hr" aria-label="Ажилтнууд" data-tip="Ажилтнууд" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.2"/><circle cx="9" cy="10.2" r="2.4"/><path d="M5.2 16.5a4 4 0 0 1 7.6 0"/><path d="M14.5 9h4M14.5 12.5h4M14.5 16h2.5"/></svg>
+          </button>
+          <button type="button" data-view="today" data-role="hr" aria-label="Ажилтнуудын ирц" data-tip="Ажилтнуудын ирц" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8.5 15l2.3 2.3 4.7-4.6"/></svg>
+          </button>
+          <button type="button" data-view="profile" class="nav-profile" aria-label="Профайл" data-tip="Профайл">
+            <span class="nav-avatar" id="nav-avatar"></span>
+          </button>
+        </nav>
+        <button type="button" class="rail-info" id="provider-note" aria-label="Эх сурвалж" data-tip="">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.1"/></svg>
+        </button>
+      </aside>
+      <main class="main">
+        <section id="stage" class="stage"></section>
+      </main>
+    </div>
+    <script src="/vendor/qrcode.js"></script>
+    <script src="/vendor/jsQR.js"></script>
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>

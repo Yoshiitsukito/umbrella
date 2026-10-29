@@ -1,0 +1,17 @@
+{
+  "name": "holo-companion",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "phone": "node scripts/queen-phone.mjs --open",
+    "test": "node --test test/firebase.test.mjs test/card.test.mjs test/attendance.test.mjs test/workstats.test.mjs test/personal.test.mjs test/wellstats.test.mjs test/cardqr.test.mjs test/devices.test.mjs test/face.test.mjs test/whiteking.test.mjs test/speech.test.mjs test/logic.test.mjs test/ai.test.mjs test/menu.test.mjs test/mobile.test.mjs test/traffic.test.mjs test/gfs.test.mjs test/pmtiles.test.mjs test/wxtiles.test.mjs"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "@vladmandic/face-api": "^1.7.15",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0"
+  }
+}

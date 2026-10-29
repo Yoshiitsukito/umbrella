@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: umbrella
+    runtime: node
+    plan: starter
+    region: singapore
+    numInstances: 1
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.mjs
+    healthCheckPath: /api/auth/ping
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: XAI_API_KEY
+        sync: false
+      - key: AI_DEFAULT
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: ELEVENLABS_TTS_MODEL
+        sync: false
+      - key: ELEVENLABS_QUEEN_VOICE
+        sync: false
+      - key: OPENAI_QUEEN_VOICE
+        sync: false
+      - key: GEMINI_QUEEN_VOICE
+        sync: false
+      - key: OPENWEATHERMAP_API_KEY
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: GOOGLE_MAPS_BROWSER_KEY
+        sync: false
+      - key: GOOGLE_TILES_API_KEY
+        sync: false
+      - key: OVERTURE_BUILDINGS_URL
+        sync: false
+      - key: GFS_BBOX
+        sync: false
+      - key: AMADEUS_CLIENT_ID
+        sync: false
+      - key: AMADEUS_CLIENT_SECRET
+        sync: false
+      - key: AMADEUS_HOST
+        sync: false
