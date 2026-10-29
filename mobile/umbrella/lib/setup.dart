@@ -20,7 +20,7 @@ class ServerSetup extends StatefulWidget {
 }
 
 class _ServerSetupState extends State<ServerSetup> {
-  late final _field = TextEditingController(text: widget.current ?? '');
+  late final _field = TextEditingController(text: widget.current ?? cloudServer);
   bool _busy = false;
   String? _error;
 
@@ -35,7 +35,7 @@ class _ServerSetupState extends State<ServerSetup> {
     if (!await MobileApi.alive(server)) {
       setState(() {
         _busy = false;
-        _error = 'Энэ хаягаар UMBRELLA сервер олдсонгүй. Хаяг зөв, компьютер дээр сервер ажиллаж байгаа эсэхийг шалгана уу.';
+        _error = 'Энэ хаягаар UMBRELLA сервер олдсонгүй. Хаяг зөв, утасны интернэт холболт ажиллаж байгаа эсэхийг шалгана уу.';
       });
       return;
     }
@@ -77,7 +77,7 @@ class _ServerSetupState extends State<ServerSetup> {
               controller: _field,
               keyboardType: TextInputType.url,
               autocorrect: false,
-              decoration: const InputDecoration(labelText: 'Эсвэл хаягаа бичнэ үү', hintText: 'https://….trycloudflare.com', border: OutlineInputBorder()),
+              decoration: const InputDecoration(labelText: 'Эсвэл хаягаа бичнэ үү', hintText: cloudServer, border: OutlineInputBorder()),
               onSubmitted: (_) => _save(),
             ),
             const SizedBox(height: 12),

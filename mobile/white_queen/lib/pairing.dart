@@ -47,7 +47,7 @@ class _PairingScreenState extends State<PairingScreen> {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Сервер олдсонгүй. Компьютер асаалттай, утас компьютертэй ижил Wi-Fi-д (эсвэл USB-ээр) холбогдсон эсэхийг шалгана уу.');
+        setState(() => _error = 'Сервер олдсонгүй. Утасны интернэт холболтоо шалгана уу.');
       }
     }
     if (mounted) _retry = Timer(const Duration(seconds: 3), _attempt);

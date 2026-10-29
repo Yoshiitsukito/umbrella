@@ -4,9 +4,12 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+const cloudServer = 'https://umbrella-v48c.onrender.com';
+
 /// Keys shared by the app and its background service (each isolate reloads before reading).
 class Keys {
   static const server = 'server';
+  static const cloudServer = 'cloud_server';
   static const token = 'token';
   static const name = 'name';
   static const setupDone = 'setup_done';

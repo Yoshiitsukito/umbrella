@@ -19,7 +19,15 @@ class ApiError implements Exception {
 enum Pairing { signedIn, pending }
 
 class Api {
-  Api(this._prefs) : base = _prefs.getString('server') ?? usbServer, _cookie = _prefs.getString('cookie');
+  Api(this._prefs) : base = _prefs.getString('server') ?? cloudServer, _cookie = _prefs.getString('cookie') {
+    if (_prefs.getBool('cloud_server') != true) {
+      base = cloudServer;
+      _prefs.setString('server', cloudServer);
+      _prefs.setBool('cloud_server', true);
+    }
+  }
+
+  static const cloudServer = 'https://umbrella-v48c.onrender.com';
 
   /// Over USB (`adb reverse`) the PC server is on the phone's own localhost.
   static const usbServer = 'http://localhost:4173';
@@ -100,7 +108,7 @@ class Api {
 
   Future<bool> _locate() async {
     final lan = _prefs.getString('lan');
-    for (final candidate in {base, usbServer, ?lan}) {
+    for (final candidate in {base, cloudServer, usbServer, ?lan}) {
       if (await _alive(candidate)) {
         await setServer(candidate);
         return true;
@@ -115,7 +123,7 @@ class Api {
 
   Future<bool> _alive(String server) async {
     try {
-      final res = await _client.get(Uri.parse('$server/api/auth/ping')).timeout(const Duration(seconds: 2));
+      final res = await _client.get(Uri.parse('$server/api/auth/ping')).timeout(Duration(seconds: server.startsWith('https://') ? 8 : 2));
       return res.statusCode == 200 && res.body.contains(_app);
     } catch (_) {
       return false;

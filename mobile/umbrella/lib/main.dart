@@ -52,7 +52,11 @@ class _RootState extends State<Root> {
   @override
   void initState() {
     super.initState();
-    SharedPreferences.getInstance().then((prefs) {
+    SharedPreferences.getInstance().then((prefs) async {
+      if (prefs.getBool(Keys.cloudServer) != true) {
+        await prefs.setString(Keys.server, cloudServer);
+        await prefs.setBool(Keys.cloudServer, true);
+      }
       setState(() => _prefs = prefs);
       if (prefs.getString(Keys.token) != null && prefs.getBool(Keys.setupDone) == true) startTracker();
     });
