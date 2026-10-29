@@ -190,9 +190,6 @@ function renderChrome() {
   place.textContent = live?.location?.label || "Байршил";
   place.hidden = isAdmin() || isStation();
   shell.classList.toggle("is-station", isStation());
-  const precip = live?.weather?.precip;
-  const line = document.querySelector("#alert-line");
-  line.textContent = precip?.status === "clear" ? "" : precip?.text || "";
   const providers = live?.providers;
   const note = document.querySelector("#provider-note");
   note.dataset.tip = providers
@@ -854,11 +851,6 @@ function weatherView() {
       <div class="hours">
         ${hours.map((hour) => `<div class="hour"><span class="muted">${esc(hour.label)}</span><b>${Math.round(hour.tempC)}°</b><span class="muted">${hour.precipProb}%</span></div>`).join("")}
       </div>
-      ${
-        terrain
-          ? ""
-          : `<p class="muted">Дэлхийн газрын зураг: чирж хөдөлгөнө, дугуй болон хоёр хуруугаар томруулна. Хур тунадас, салхи, үүл, өдөр шөнийн сүүдэр 3D горимтой ижил NOAA GFS өгөгдлөөр зурагдана. Цагаан урсгал нь салхины чиглэл; газрын зураг дээр заагч аваачвал тухайн цэгийн бодит цаг агаар (OpenWeatherMap станц) гарна. Температур, даралт © OpenWeatherMap · хиймэл дагуулын зураг © EOX Sentinel-2 · нэрс © OpenStreetMap contributors.</p>`
-      }
     </div>`;
 }
 
@@ -1911,23 +1903,13 @@ function healthView() {
           ${debt.advice ? `<p class="muted">${esc(debt.advice)}</p>` : ""}
         </form>`;
   const move = `
-        <form class="panel stack" data-form="activity">
+        <section class="panel stack">
           <h2>Хөдөлгөөн${ctx.days[ctx.today]?.phone ? ` <small>утаснаас · ${esc(timeLabel(ctx.days[ctx.today].phone.at))}</small>` : ""}</h2>
           <p><b>${health?.steps ?? 0}</b> / ${health?.stepGoal ?? 8000} алхам</p>
           ${meter(health ? (health.steps / health.stepGoal) * 100 : 0)}
-          <div class="row">
-            <button class="chip" type="button" data-action="steps" data-add="1000">+1000</button>
-            <button class="chip" type="button" data-action="steps" data-add="2500">+2500</button>
-            <input name="steps" type="number" min="0" max="100000" placeholder="Нийт алхам" class="short" />
-            <button class="chip" type="submit">Тохируулах</button>
-          </div>
           <p><b>${health?.activeMin ?? 0}</b> / ${health?.activeGoal ?? 30} идэвхтэй минут</p>
           ${meter(health ? (health.activeMin / health.activeGoal) * 100 : 0)}
-          <div class="row">
-            <button class="chip" type="button" data-action="active" data-min="10">+10 мин</button>
-            <button class="chip" type="button" data-action="active" data-min="30">+30 мин</button>
-          </div>
-        </form>`;
+        </section>`;
   const heart = `
         <form class="panel stack" data-form="vitals">
           <h2>Даралт ба зүрх</h2>
@@ -5429,11 +5411,6 @@ stage.addEventListener("click", async (event) => {
     else wrap?.requestFullscreen?.();
   }
   if (action === "drink") drink(Number(button.dataset.ml));
-  if (action === "steps" || action === "active") {
-    const body = action === "steps" ? { addSteps: Number(button.dataset.add) } : { addMinutes: Number(button.dataset.min) };
-    state.live = await api("/api/health/activity", { method: "POST", body: JSON.stringify(body) });
-    render();
-  }
   if (action === "face-cancel") {
     faceRun.cancel?.();
     return;
@@ -5683,7 +5660,6 @@ stage.addEventListener("submit", async (event) => {
     return;
   }
   const healthForms = {
-    activity: ["/api/health/activity", "POST"],
     vitals: ["/api/health/vitals", "POST"],
     watch: ["/api/health/watch", "POST"],
     body: ["/api/health/body", "PUT"],

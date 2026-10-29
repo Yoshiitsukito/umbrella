@@ -288,8 +288,6 @@ a { color: var(--red-hi); }
 .place[hidden] { display: none; }
 .top-left .place[hidden] + .seg-clock { padding-left: 0; border-left: 0; }
 .top-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.alert-line { margin: 0 8px 0 0; max-width: 320px; color: var(--warn); text-align: right; font-size: 13px; line-height: 1.3; }
-.alert-line:empty { display: none; }
 .stage { padding: 24px 32px 48px; }
 
 /* Buttons */
@@ -1888,7 +1886,6 @@ b .leave-type { padding: 0 6px; }
   .top-left { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; }
   .top-left .seg-clock { padding-left: 0; border-left: 0; }
   .top-icon { width: 36px; height: 36px; }
-  .top-actions .alert-line { display: none; }
   .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 10px 16px; gap: 12px; }
   .nav { flex-direction: row; justify-content: space-around; }
   .nav button { width: 44px; height: 44px; }
