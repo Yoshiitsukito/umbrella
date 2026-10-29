@@ -1,5 +1,6 @@
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const LISTEN_MS = 15000;
+const MANUAL_MS = 90000;
 
 let active = null;
 let audio = null;
@@ -21,21 +22,36 @@ export function stopListening() {
   active?.stop();
 }
 
-function browserListen({ onInterim, onFinal, onUnclear, onError, onEnd }) {
-  const deadline = performance.now() + LISTEN_MS;
+/** Stops listening and throws away whatever was heard. */
+export function cancelListening() {
+  active?.cancel();
+}
+
+function browserListen({ onInterim, onFinal, onUnclear, onError, onEnd }, manual = false) {
+  const deadline = performance.now() + (manual ? MANUAL_MS : LISTEN_MS);
   let rec = null;
   let finalText = "";
+  let interim = "";
   let failed = null;
   let heard = false;
   let spoke = false;
   let stopped = false;
+  let discarded = false;
   const stop = () => {
     stopped = true;
     rec?.stop();
   };
-  const timer = setTimeout(() => {
-    if (!heard) stop();
-  }, LISTEN_MS);
+  const cancel = () => {
+    stopped = true;
+    discarded = true;
+    rec?.abort();
+  };
+  const timer = setTimeout(
+    () => {
+      if (manual || !heard) stop();
+    },
+    manual ? MANUAL_MS : LISTEN_MS,
+  );
   const start = () => {
     rec = new Recognition();
     rec.lang = "mn-MN";
@@ -43,15 +59,15 @@ function browserListen({ onInterim, onFinal, onUnclear, onError, onEnd }) {
     rec.continuous = true;
     rec.maxAlternatives = 1;
     rec.onresult = (event) => {
-      let interim = "";
+      interim = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
-        if (result.isFinal) finalText += result[0].transcript;
+        if (result.isFinal) finalText += `${result[0].transcript} `;
         else interim += result[0].transcript;
       }
       if ((finalText + interim).trim()) heard = true;
       onInterim?.((finalText + interim).trim());
-      if (finalText.trim()) stop();
+      if (!manual && finalText.trim()) stop();
     };
     rec.onspeechstart = () => {
       spoke = true;
@@ -64,13 +80,21 @@ function browserListen({ onInterim, onFinal, onUnclear, onError, onEnd }) {
     };
     rec.onend = () => {
       const silent = !failed || failed === "no-speech";
-      if (!stopped && silent && !spoke && !finalText.trim() && performance.now() < deadline - 300) {
+      const again = manual ? silent : silent && !spoke && !finalText.trim();
+      if (!stopped && again && performance.now() < deadline - 300) {
+        if (manual && interim.trim()) finalText += `${interim} `;
+        interim = "";
         failed = null;
         start();
         return;
       }
       clearTimeout(timer);
       active = null;
+      if (discarded) {
+        onEnd?.();
+        return;
+      }
+      if (manual && interim.trim()) finalText += interim;
       if (failed && failed !== "no-speech" && failed !== "aborted") onError?.(failed);
       else if (finalText.trim()) onFinal?.(finalText.trim());
       else if (spoke && failed !== "aborted") onUnclear?.();
@@ -78,16 +102,25 @@ function browserListen({ onInterim, onFinal, onUnclear, onError, onEnd }) {
     };
     rec.start();
   };
-  active = { stop, kind: "browser" };
+  active = { stop, cancel, kind: "browser" };
   start();
 }
 
-async function recordListen({ onFinal, onUnclear, onError, onEnd, onLevel }) {
+async function recordListen({ onFinal, onUnclear, onError, onEnd, onLevel }, manual = false) {
+  let cancelled = false;
+  active = { stop: () => (cancelled = true), cancel: () => (cancelled = true), kind: "record" };
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
   } catch {
+    active = null;
     onError?.("not-allowed");
+    onEnd?.();
+    return;
+  }
+  if (cancelled) {
+    active = null;
+    stream.getTracks().forEach((track) => track.stop());
     onEnd?.();
     return;
   }
@@ -103,6 +136,7 @@ async function recordListen({ onFinal, onUnclear, onError, onEnd, onLevel }) {
   let heard = false;
   let quietSince = 0;
   let timer = 0;
+  let discarded = false;
   const finish = () => {
     clearInterval(timer);
     if (recorder.state !== "inactive") recorder.stop();
@@ -117,11 +151,11 @@ async function recordListen({ onFinal, onUnclear, onError, onEnd, onLevel }) {
     if (level > 0.03) {
       heard = true;
       quietSince = 0;
-    } else if (heard) {
+    } else if (heard && !manual) {
       quietSince ||= now;
       if (now - quietSince > 1400) finish();
     }
-    if (now - started > LISTEN_MS + 15000 || (!heard && now - started > LISTEN_MS)) finish();
+    if (manual ? now - started > MANUAL_MS : now - started > LISTEN_MS + 15000 || (!heard && now - started > LISTEN_MS)) finish();
   }, 100);
   recorder.ondataavailable = (event) => {
     if (event.data.size) chunks.push(event.data);
@@ -130,7 +164,7 @@ async function recordListen({ onFinal, onUnclear, onError, onEnd, onLevel }) {
     active = null;
     stream.getTracks().forEach((track) => track.stop());
     context.close();
-    if (!heard) {
+    if (discarded || (!heard && !(manual && performance.now() - started > 1000))) {
       onEnd?.();
       return;
     }
@@ -147,32 +181,47 @@ async function recordListen({ onFinal, onUnclear, onError, onEnd, onLevel }) {
     }
     onEnd?.();
   };
-  active = { stop: finish, kind: "record" };
+  active = {
+    stop: finish,
+    cancel: () => {
+      discarded = true;
+      finish();
+    },
+    kind: "record",
+  };
   recorder.start(250);
 }
 
-export function listen(handlers, { serverStt }) {
+/** With `manual`, listening runs until stopListening() (or MANUAL_MS) instead of ending at the first pause. */
+export function listen(handlers, { serverStt, manual = false }) {
   if (active) return;
+  if (manual && serverStt && canRecord()) {
+    recordListen(handlers, true);
+    return;
+  }
   if (Recognition) {
     let fellBack = false;
-    browserListen({
-      ...handlers,
-      onError: (code) => {
-        const recoverable = ["network", "language-not-supported", "service-not-allowed"].includes(code);
-        if (recoverable && serverStt && canRecord()) {
-          fellBack = true;
-          handlers.onFallback?.();
-          recordListen(handlers);
-        } else handlers.onError?.(code);
+    browserListen(
+      {
+        ...handlers,
+        onError: (code) => {
+          const recoverable = ["network", "language-not-supported", "service-not-allowed"].includes(code);
+          if (recoverable && serverStt && canRecord()) {
+            fellBack = true;
+            handlers.onFallback?.();
+            recordListen(handlers, manual);
+          } else handlers.onError?.(code);
+        },
+        onEnd: () => {
+          if (!fellBack) handlers.onEnd?.();
+        },
       },
-      onEnd: () => {
-        if (!fellBack) handlers.onEnd?.();
-      },
-    });
+      manual,
+    );
     return;
   }
   if (serverStt && canRecord()) {
-    recordListen(handlers);
+    recordListen(handlers, manual);
     return;
   }
   handlers.onError?.("unsupported");

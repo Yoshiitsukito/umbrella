@@ -4,7 +4,7 @@ import { createCore } from "./rkcore.js";
 import { analyzeFrame } from "./vision.js";
 import { CARD_TEXTS, idCard } from "./idcard.js";
 import { exportCard } from "./cardexport.js";
-import { isListening, listen, primeAudio, speak, stopListening, stopSpeaking } from "./voice.js";
+import { cancelListening, isListening, listen, primeAudio, speak, stopListening, stopSpeaking } from "./voice.js";
 import {
   addDays,
   CYCLE_WORK_DAYS,
@@ -196,7 +196,7 @@ function renderChrome() {
   const providers = live?.providers;
   const note = document.querySelector("#provider-note");
   note.dataset.tip = providers
-    ? `Цаг агаар: ${providers.weather}. Газрын зураг: ${providers.weatherMap ? "OpenWeatherMap" : "түлхүүргүй"}. Зам: ${providers.maps}. Нислэг: ${providers.flights ? "Amadeus" : "түлхүүргүй"}. Red King: ${(providers.ai || []).filter((item) => item.configured).map((item) => item.label).join(", ") || "дотоод"}.`
+    ? `Цаг агаар: ${providers.weather}. Газрын зураг: ${providers.weatherMap ? "OpenWeatherMap" : "түлхүүргүй"}. Зам: ${providers.maps}. Нислэг: ${providers.flights ? "Amadeus" : "түлхүүргүй"}. Red King: ${(providers.ai || []).find((item) => item.id === "gemini" && item.configured)?.label || "дотоод"}.`
     : "";
   note.hidden = !providers;
   const role = ROLES.includes(state.me?.role) ? state.me.role : "user";
@@ -2131,10 +2131,12 @@ function voiceError(code) {
   return map[code] || `Дуу таних: ${code}`;
 }
 
+const RK_LISTENING = "Сонсож байна… Асуултаа хэлээд цөмийг дахин дарна уу.";
+
 function rkMic() {
   primeAudio();
   if (isListening()) {
-    rkStatus("", null);
+    rkStatus("", "thinking");
     stopListening();
     return;
   }
@@ -2146,24 +2148,32 @@ function rkMic() {
   if (state.rk.mode === "thinking") return;
   stopSpeaking();
   rkWrite(false);
-  rkStatus("", "listening");
-  const waiting = () => state.rk.mode === "listening" && state.view === "ask";
+  rkStatus(RK_LISTENING, "listening");
+  let settled = false;
+  const here = () => state.view === "ask";
   listen(
     {
       onInterim: () => {},
-      onFallback: () => rkStatus("", "listening"),
-      onFinal: (text) => askRedKing(text),
-      onUnclear: () => {
-        if (waiting()) rkUnclear();
+      onFallback: () => rkStatus(RK_LISTENING, "listening"),
+      onFinal: (text) => {
+        settled = true;
+        askRedKing(text);
       },
-      onError: (code) => rkStatus(voiceError(code), null),
+      onUnclear: () => {
+        settled = true;
+        if (here()) rkUnclear();
+      },
+      onError: (code) => {
+        settled = true;
+        rkStatus(voiceError(code), null);
+      },
       onEnd: () => {
-        if (!waiting()) return;
+        if (settled || !here()) return;
         rkStatus("", "thinking");
         rkSpeak(RK_NOTHING);
       },
     },
-    { serverStt: voiceSupport().stt.length > 0 },
+    { serverStt: voiceSupport().stt.length > 0, manual: true },
   );
 }
 
@@ -5128,7 +5138,7 @@ nav.addEventListener("click", (event) => {
   if (!button) return;
   if (state.view === "whiteking" && button.dataset.view !== state.view && !wkLeaveConfig()) return;
   if (button.dataset.view !== state.view) {
-    stopListening();
+    cancelListening();
     stopSpeaking();
     state.rk = { status: "", mode: null };
   }
@@ -5933,7 +5943,7 @@ const loginScreen = document.querySelector("#login");
 const loginForm = document.querySelector("#login-form");
 const loginError = document.querySelector("#login-error");
 function showLogin(message = "") {
-  stopListening();
+  cancelListening();
   stopSpeaking();
   clearInterval(state.wkTimer);
   clearInterval(state.wkAdminTimer);
