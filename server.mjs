@@ -47,7 +47,6 @@ import { apparentTemperature, conditionLabel, fetchForecast, sunElevation, weath
 import { fetchLiveWeather, livePoint } from "./lib/liveweather.mjs";
 import { cycleLabel, insideBox, sampleWorld, worldData } from "./lib/gfs.mjs";
 import { WX_MODES, renderWeatherTile } from "./lib/wxtiles.mjs";
-import { RadarError, createRadar } from "./lib/rainviewer.mjs";
 import { verifyToken } from "./lib/token.mjs";
 import { approveDevice, deviceList, deviceLogin, removeDevice, requestDevice } from "./lib/devices.mjs";
 import { ensureAttendance, presenceOf, recordScan, shiftWindows } from "./lib/attendance.mjs";
@@ -248,26 +247,6 @@ async function serveTile(res, kind, layer, z, x, y) {
   if (tileCache.size > 1500) tileCache.delete(tileCache.keys().next().value);
   res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": `max-age=${Math.round(ttlMs / 1000)}` });
   res.end(body);
-}
-
-const radar = createRadar();
-
-async function serveRadarFrames(res) {
-  try {
-    json(res, 200, await radar.frames());
-  } catch (error) {
-    json(res, error instanceof RadarError ? error.status : 502, { error: error.message });
-  }
-}
-
-async function serveRadarTile(res, job) {
-  try {
-    const { body, maxAgeS } = await job;
-    res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": `max-age=${maxAgeS}` });
-    res.end(body);
-  } catch (error) {
-    tileError(res, error instanceof RadarError ? error.status : 502, error.message);
-  }
 }
 
 const TRAFFIC_TTL_MS = 2 * 60 * 1000;
@@ -2025,10 +2004,6 @@ async function routeApi(req, res, url) {
     return;
   }
   if (req.method === "GET" && url.pathname.startsWith("/api/wx/")) {
-    if (url.pathname === "/api/wx/radar/frames") {
-      await serveRadarFrames(res);
-      return;
-    }
     const wxTile = url.pathname.match(/^\/api\/wx\/tiles\/([a-z]+)\/(\d+)\/(\d+)\/(\d+)\.png$/);
     if (wxTile) {
       await serveWxTile(res, wxTile[1], Number(wxTile[2]), Number(wxTile[3]), Number(wxTile[4]), wxBucket(url.searchParams.get("t")));
@@ -2044,16 +2019,6 @@ async function routeApi(req, res, url) {
     const owm = url.pathname.match(/^\/api\/tiles\/owm\/([a-z_]+)\/(\d+)\/(\d+)\/(\d+)$/);
     const traffic = url.pathname.match(/^\/api\/tiles\/traffic\/(\d+)\/(\d+)\/(\d+)$/);
     const building = url.pathname.match(/^\/api\/tiles\/buildings\/(\d+)\/(\d+)\/(\d+)$/);
-    const radarFrame = url.pathname.match(/^\/api\/tiles\/radar\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/);
-    const radarCoverage = url.pathname.match(/^\/api\/tiles\/radar\/coverage\/(\d+)\/(\d+)\/(\d+)$/);
-    if (radarFrame) {
-      await serveRadarTile(res, radar.tile(Number(radarFrame[1]), Number(radarFrame[2]), Number(radarFrame[3]), Number(radarFrame[4])));
-      return;
-    }
-    if (radarCoverage) {
-      await serveRadarTile(res, radar.coverage(Number(radarCoverage[1]), Number(radarCoverage[2]), Number(radarCoverage[3])));
-      return;
-    }
     if (building) {
       await serveBuildings(res, Number(building[1]), Number(building[2]), Number(building[3]));
       return;

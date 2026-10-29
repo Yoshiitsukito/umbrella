@@ -761,7 +761,6 @@ const WX_ICONS = {
   wind: `<path d="M3 8.5h10.5a3 3 0 1 0-3-3"/><path d="M3 12.5h15a3 3 0 1 1-3 3"/><path d="M3 16.5h7"/>`,
   precipitation: `<path d="M7 14h10a4 4 0 0 0 .4-8A6 6 0 0 0 6.3 7.6 3.2 3.2 0 0 0 7 14z"/><path d="M8.5 17.5l-1 3M12.5 17.5l-1 3M16.5 17.5l-1 3"/>`,
   clouds: `<path d="M7 18.5h10.5a4.5 4.5 0 0 0 .5-9A6.5 6.5 0 0 0 5.8 11.1 3.8 3.8 0 0 0 7 18.5z"/>`,
-  radar: `<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="12" cy="12" r="1"/>`,
   temp_new: `<path d="M14 14.6V5a2 2 0 0 0-4 0v9.6a4 4 0 1 0 4 0z"/><path d="M12 9.5v7"/>`,
   pressure_new: `<path d="M4.4 18a8.5 8.5 0 1 1 15.2 0"/><path d="M12 14.5l4-5"/><circle cx="12" cy="14.5" r="1.3"/>`,
   traffic: `<rect x="7.5" y="2.5" width="9" height="19" rx="3.5"/><circle cx="12" cy="7.2" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="16.8" r="1.6"/>`,
@@ -858,7 +857,7 @@ function weatherView() {
       ${
         terrain
           ? ""
-          : `<p class="muted">Дэлхийн газрын зураг: чирж хөдөлгөнө, дугуй болон хоёр хуруугаар томруулна. Хур тунадас, салхи, үүл, өдөр шөнийн сүүдэр 3D горимтой ижил NOAA GFS өгөгдлөөр зурагдана. Цагаан урсгал нь салхины чиглэл; газрын зураг дээр заагч аваачвал тухайн цэгийн бодит цаг агаар (OpenWeatherMap станц) гарна. Радар давхарга нь сүүлийн 2 цагийн бодит ажиглалтыг 10 минутын алхмаар хөдөлгөнө. Температур, даралт © OpenWeatherMap · радар © RainViewer · хиймэл дагуулын зураг © EOX Sentinel-2 · нэрс © OpenStreetMap contributors.</p>`
+          : `<p class="muted">Дэлхийн газрын зураг: чирж хөдөлгөнө, дугуй болон хоёр хуруугаар томруулна. Хур тунадас, салхи, үүл, өдөр шөнийн сүүдэр 3D горимтой ижил NOAA GFS өгөгдлөөр зурагдана. Цагаан урсгал нь салхины чиглэл; газрын зураг дээр заагч аваачвал тухайн цэгийн бодит цаг агаар (OpenWeatherMap станц) гарна. Температур, даралт © OpenWeatherMap · хиймэл дагуулын зураг © EOX Sentinel-2 · нэрс © OpenStreetMap contributors.</p>`
       }
     </div>`;
 }
@@ -883,14 +882,6 @@ function terrainWeatherStatus(status) {
   }
   if (status.state === "loading") return patchLegend(status.layer, `<span class="muted">${esc(label)} ачаалж байна…</span>`);
   if (status.state === "error") return patchLegend(status.layer, `<span class="warn">${esc(status.message)}</span>`);
-  if (status.layer === "radar") {
-    const when = status.clock ? ` ${esc(status.clock)} · ${status.agoMin} мин өмнө · ${status.frame}/${status.frames}` : "";
-    const warning = status.warning ? ` · <span class="warn">${esc(status.warning)}</span>` : "";
-    return patchLegend(
-      "radar",
-      `<span class="muted">${esc(label)}${when}</span>${warning}<br><span class="muted">Бараан хэсэгт радар хүрэхгүй. Монголд зөвхөн Улаанбаатарын радар бий.</span>`,
-    );
-  }
   const source = LAYERS.find((item) => item.id === status.layer)?.kind === "field"
     ? `NOAA GFS${status.time ? ` ${esc(status.time.slice(11, 16))} UTC` : ""}`
     : "OpenWeatherMap";
