@@ -19,6 +19,12 @@ const GFS_PRECIP_LEGEND = {
   labels: [0.1, 1.5, 4, 8, 15, 30, 60],
   unit: "мм/ц",
 };
+const RADAR_STEP_MS = 600;
+const RADAR_HOLD_MS = 2000;
+const RADAR_REFRESH_MS = 5 * 60 * 1000;
+const RADAR_OPACITY = 0.85;
+const RADAR_COVERAGE_OPACITY = 0.35;
+const RADAR_ATTRIBUTION = 'Радар © <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a>';
 const GFS_CLOUD_LEGEND = {
   css: "linear-gradient(90deg, rgba(238,242,247,0) 0%, rgba(238,242,247,0.35) 40%, rgba(238,242,247,0.8) 100%)",
   labels: [0, 25, 50, 75, 100],
@@ -167,12 +173,94 @@ function attachWeather(map, onWeather, initialPrecip, { flat = false } = {}) {
     clearOverlay();
   }
 
-  function removeLayers() {
-    for (const id of ["wx-raster", "wx-gfs"]) {
-      if (map.getLayer(id)) map.removeLayer(id);
-      if (map.getSource(id)) map.removeSource(id);
-    }
+  function dropLayer(id) {
+    if (map.getLayer(id)) map.removeLayer(id);
+    if (map.getSource(id)) map.removeSource(id);
   }
+
+  function removeLayers() {
+    for (const id of ["wx-raster", "wx-gfs"]) dropLayer(id);
+    radarJob += 1;
+    stopRadar();
+  }
+
+  const zoomFade = (opacity) =>
+    flat ? opacity : ["interpolate", ["linear"], ["zoom"], BUILDING_ZOOM - 0.5, opacity, BUILDING_ZOOM, 0];
+  let radar = null;
+  let radarJob = 0;
+
+  function stopRadar() {
+    if (!radar) return;
+    clearTimeout(radar.timer);
+    for (const id of radar.ids) dropLayer(id);
+    dropLayer("wx-radar-cov");
+    radar = null;
+  }
+
+  function radarClock(ms) {
+    const date = new Date(ms);
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function showRadarFrame(index) {
+    if (!radar) return;
+    if (radar.index !== index) map.setPaintProperty(radar.ids[radar.index], "raster-opacity", 0);
+    map.setPaintProperty(radar.ids[index], "raster-opacity", zoomFade(RADAR_OPACITY));
+    radar.index = index;
+    const ms = radar.frames[index].time * 1000;
+    onWeather({
+      state: "ready",
+      layer: layerId,
+      clock: radarClock(ms),
+      agoMin: Math.max(0, Math.round((Date.now() - ms) / 60000)),
+      frame: index + 1,
+      frames: radar.frames.length,
+      warning: radar.warning,
+    });
+  }
+
+  function radarStep() {
+    if (!radar) return;
+    const next = (radar.index + 1) % radar.ids.length;
+    showRadarFrame(next);
+    radar.timer = setTimeout(radarStep, next === radar.ids.length - 1 ? RADAR_HOLD_MS : RADAR_STEP_MS);
+  }
+
+  async function showRadar({ quiet = false } = {}) {
+    const mine = ++radarJob;
+    if (!quiet) onWeather({ state: "loading", layer: layerId });
+    let data;
+    try {
+      data = await fetchJson("/api/wx/radar/frames");
+    } catch (error) {
+      if (mine === radarJob && !quiet) onWeather({ state: "error", layer: layerId, message: error.message });
+      return;
+    }
+    if (mine !== radarJob || layerId !== "radar" || !data.frames?.length) return;
+    if (radar && radar.latest === data.frames.at(-1).time) return;
+    stopRadar();
+    const before = map.getLayer("night-0") ? "night-0" : beforeId();
+    const source = (tiles, extra = {}) => ({ type: "raster", tiles: [tiles], tileSize: data.tileSize, maxzoom: data.maxZoom, ...extra });
+    map.addSource("wx-radar-cov", source(`${location.origin}/api/tiles/radar/coverage/{z}/{x}/{y}`, { attribution: RADAR_ATTRIBUTION }));
+    map.addLayer({ id: "wx-radar-cov", type: "raster", source: "wx-radar-cov", paint: { "raster-opacity": zoomFade(RADAR_COVERAGE_OPACITY) } }, before);
+    const ids = data.frames.map((frame) => {
+      const id = `wx-radar-${frame.time}`;
+      map.addSource(id, source(`${location.origin}/api/tiles/radar/${frame.time}/{z}/{x}/{y}`));
+      map.addLayer(
+        { id, type: "raster", source: id, paint: { "raster-opacity": 0, "raster-fade-duration": 0, "raster-resampling": "linear" } },
+        before,
+      );
+      return id;
+    });
+    const last = ids.length - 1;
+    radar = { frames: data.frames, ids, index: last, latest: data.frames[last].time, timer: 0, warning: "" };
+    showRadarFrame(last);
+    radar.timer = setTimeout(radarStep, RADAR_HOLD_MS);
+  }
+
+  const radarTimer = setInterval(() => {
+    if (layerId === "radar") showRadar({ quiet: true });
+  }, RADAR_REFRESH_MS);
 
   const gfsBucket = () => Math.floor(Date.now() / GFS_BUCKET_MS);
   const gfsTiles = (mode) => [`${location.origin}/api/wx/tiles/${mode}/{z}/{x}/{y}.png?t=${gfsBucket()}`];
@@ -491,6 +579,7 @@ function attachWeather(map, onWeather, initialPrecip, { flat = false } = {}) {
   map.on("error", (event) => {
     if (event?.sourceId === "wx-raster") onWeather({ state: "error", layer: layerId, message: "OpenWeatherMap тайл ачаалагдсангүй" });
     if (event?.sourceId === "wx-gfs") onWeather({ state: "error", layer: layerId, message: "NOAA GFS тайл ачаалагдсангүй" });
+    if (radar && event?.sourceId?.startsWith("wx-radar")) radar.warning = "Зарим радарын тайл ачаалагдсангүй";
   });
   resize();
   requestAnimationFrame(frame);
@@ -510,6 +599,8 @@ function attachWeather(map, onWeather, initialPrecip, { flat = false } = {}) {
         onWeather({ state: "off" });
       } else if (layer().kind === "tile") {
         showTiles();
+      } else if (layer().kind === "radar") {
+        showRadar();
       } else {
         showGfs(GFS_MODES[layerId]);
       }
@@ -529,6 +620,8 @@ function attachWeather(map, onWeather, initialPrecip, { flat = false } = {}) {
       clearTimeout(fieldTimer);
       clearTimeout(tipTimer);
       clearInterval(gfsTimer);
+      clearInterval(radarTimer);
+      stopRadar();
       overlay.remove();
       gloom.remove();
       tip.remove();
