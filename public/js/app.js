@@ -209,7 +209,7 @@ function renderChrome() {
     profileButton.dataset.tip = tip;
     profileButton.setAttribute("aria-label", `Профайл: ${tip}`);
   }
-  maybeNotify(precip);
+  maybeNotify(live?.weather?.precip);
 }
 
 function maybeNotify(precip) {
