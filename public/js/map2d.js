@@ -23,15 +23,9 @@ const PRESSURE_RAMP = [
   [1080, "rgb(198,0,0)"],
 ];
 
-const RADAR_RAMP = [
-  [5, "#92887164"], [10, "#cec08796"], [15, "#88ddee"], [20, "#00a3e0"], [25, "#0077aa"], [30, "#005588"],
-  [35, "#ffee00"], [40, "#ffaa00"], [45, "#ff4400"], [50, "#c10000"], [55, "#ffaaff"], [60, "#ff77ff"], [65, "#ffffff"],
-];
-
 export const LAYERS = [
   { id: "wind", label: "Салхи", kind: "field", unit: "м/с", ramp: WIND_RAMP, legendMax: 36 },
   { id: "precipitation", label: "Хур тунадас", kind: "field", unit: "мм/ц", ramp: PRECIP_RAMP },
-  { id: "radar", label: "Радар · RainViewer", kind: "radar", unit: "dBZ", ramp: RADAR_RAMP },
   { id: "clouds", label: "Үүл", kind: "field", unit: "%", ramp: CLOUD_RAMP },
   { id: "temp_new", label: "Температур", kind: "tile", unit: "°C", ramp: TEMP_RAMP },
   { id: "pressure_new", label: "Даралт", kind: "tile", unit: "гПа", ramp: PRESSURE_RAMP },
