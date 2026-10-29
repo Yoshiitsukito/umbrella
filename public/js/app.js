@@ -699,7 +699,6 @@ function homeView() {
         <div class="brief-body">
           <h2>${briefing?.auto ? "06:00 танилцуулга" : briefing ? "Өнөөдрийн танилцуулга" : "Танилцуулга хүлээгдэж байна"}</h2>
           <p>${esc(briefing?.summary || "Өглөө 06:00-д градус, салхины хурд, чиглэл автоматаар гарна. Сервер тэр үед ассан байх ёстой.")}</p>
-          ${precip?.text ? `<p class="brief-precip ${precipTone}">${icon("umbrella", "ico tiny")}${esc(precip.text)}</p>` : ""}
         </div>
         <div class="brief-voice">
           <small>Red King · дуут танилцуулга</small>

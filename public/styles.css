@@ -404,8 +404,6 @@ button.link:hover { text-decoration: underline; }
 .brief-card h2 { margin-bottom: 6px; }
 .brief-card h2::before { display: none; }
 .brief-card p { margin: 4px 0; max-width: 75ch; }
-.brief-precip { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; }
-.brief-precip.warn { color: var(--warn); font-weight: 600; }
 .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .tile {
   display: flex;
