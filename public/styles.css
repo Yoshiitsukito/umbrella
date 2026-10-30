@@ -1469,6 +1469,16 @@ b .leave-type { padding: 0 6px; }
 .hist-date small { white-space: nowrap; }
 .hist-table td.mono { font-variant-numeric: tabular-nums; }
 .plan-sub { margin: 22px 0 10px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.plan-sub-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+.plan-sub-head .plan-sub { margin: 0; }
+.fold-box:not(.is-open) > .fold-body,
+.fold-box:not(.is-open) .fold-only,
+.fold-box.is-open > .fold-summary { display: none; }
+.fold-box:not(.is-open) > .admin-users-head,
+.fold-box:not(.is-open) > .plan-sub-head { margin-bottom: 4px; }
+.fold-box > .fold-summary { margin: 0; }
+.fold-box:not(.is-open) > .plan-tally { margin-bottom: 0; }
+.fold-btn { flex: none; min-width: 108px; justify-content: center; }
 .plan-week-pick { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-week-pick label { display: grid; gap: 2px; justify-items: center; }
 .plan-week-pick small { color: var(--muted); font-size: 11px; }

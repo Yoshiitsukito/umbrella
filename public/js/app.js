@@ -3364,8 +3364,49 @@ function planSettings(data, users, today) {
     })
     .join("");
   return `
-      <h3 class="plan-sub">Хуваарь тохируулах</h3>
-      <div class="plan-scroll"><table class="user-table plan-table"><thead><tr><th>Хэрэглэгч</th><th>Төрөл</th><th>Тохиргоо</th></tr></thead><tbody>${rows || `<tr><td colspan="3" class="muted">Хэрэглэгч алга.</td></tr>`}</tbody></table></div>`;
+      <div class="fold-box${hrFold().settings ? " is-open" : ""}" data-fold-box="settings">
+        <div class="plan-sub-head">
+          <h3 class="plan-sub">Хуваарь тохируулах</h3>
+          ${foldButton("settings")}
+        </div>
+        <p class="hist-summary fold-summary">${users.length} ажилтны хуваарийн төрөл, эхлэх огноо, эхлэх ээлжийг эндээс өөрчилнө.</p>
+        <div class="fold-body plan-scroll"><table class="user-table plan-table"><thead><tr><th>Хэрэглэгч</th><th>Төрөл</th><th>Тохиргоо</th></tr></thead><tbody>${rows || `<tr><td colspan="3" class="muted">Хэрэглэгч алга.</td></tr>`}</tbody></table></div>
+      </div>`;
+}
+
+const HR_FOLD_KEY = "umb_hr_fold";
+
+/** Which HR staff-page blocks are expanded; remembered on this device. */
+function hrFold() {
+  if (!state.hrFold) {
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem(HR_FOLD_KEY) || "{}");
+    } catch {
+      /* a broken value just falls back to the defaults */
+    }
+    state.hrFold = { staff: true, roster: false, settings: false, ...saved };
+  }
+  return state.hrFold;
+}
+
+function foldButton(name) {
+  const open = Boolean(hrFold()[name]);
+  return `<button class="chip fold-btn" type="button" data-action="hr-fold" data-fold="${name}" aria-expanded="${open}">${open ? "Хураах" : "Дэлгэрэнгүй"}</button>`;
+}
+
+function toggleFold(button) {
+  const name = button.dataset.fold;
+  const fold = hrFold();
+  fold[name] = !fold[name];
+  try {
+    localStorage.setItem(HR_FOLD_KEY, JSON.stringify(fold));
+  } catch {
+    /* private mode: the choice lasts until reload */
+  }
+  stage.querySelector(`[data-fold-box="${name}"]`)?.classList.toggle("is-open", fold[name]);
+  button.setAttribute("aria-expanded", String(fold[name]));
+  button.textContent = fold[name] ? "Хураах" : "Дэлгэрэнгүй";
 }
 
 function planEditor(data) {
@@ -3378,9 +3419,14 @@ function planEditor(data) {
   }
   return `
     <section class="panel admin-users att-plans">
-      <h2>Ээлжийн хуваарь <small>Эргэлт: 7 өдөр → 7 шөнө → 14 амралт, шөнөөр эхэлбэл 7 шөнө → 7 өдөр → 14 амралт, хүний нөөц 14 өдөр → 14 амралт. Автоматаар давтагдана</small></h2>
-      <p class="plan-tally">Өнөөдөр: <span class="is-day">${PLAN_LABEL.day} ${tally.day}</span><span class="is-night">${PLAN_LABEL.night} ${tally.night}</span><span class="is-off">${PLAN_LABEL.off} ${tally.off}</span></p>
-      ${rosterTable(data, users, today)}
+      <div class="fold-box${hrFold().roster ? " is-open" : ""}" data-fold-box="roster">
+        <div class="admin-users-head">
+          <h2>Ээлжийн хуваарь <small>Эргэлт: 7 өдөр → 7 шөнө → 14 амралт, шөнөөр эхэлбэл 7 шөнө → 7 өдөр → 14 амралт, хүний нөөц 14 өдөр → 14 амралт. Автоматаар давтагдана</small></h2>
+          ${foldButton("roster")}
+        </div>
+        <p class="plan-tally">Өнөөдөр: <span class="is-day">${PLAN_LABEL.day} ${tally.day}</span><span class="is-night">${PLAN_LABEL.night} ${tally.night}</span><span class="is-off">${PLAN_LABEL.off} ${tally.off}</span></p>
+        <div class="fold-body">${rosterTable(data, users, today)}</div>
+      </div>
       ${planSettings(data, users, today)}
     </section>`;
 }
@@ -3650,11 +3696,16 @@ function hrStaffView() {
         </div>
         <div class="admin-stats staff-stats" data-staff="stats">${parts.stats}</div>
       </section>
-      <section class="panel admin-users">
+      <section class="panel admin-users fold-box${hrFold().staff ? " is-open" : ""}" data-fold-box="staff">
         <div class="admin-users-head">
           <h2>Ажилтнууд <small data-staff="range">${parts.range}</small></h2>
-          <button class="chip" type="button" data-action="staff-csv">${adminIcon("download")}CSV</button>
+          <div class="hist-actions">
+            <button class="chip fold-only" type="button" data-action="staff-csv">${adminIcon("download")}CSV</button>
+            ${foldButton("staff")}
+          </div>
         </div>
+        <p class="hist-summary fold-summary">${data.users.length} ажилтны ээлж, ирц, ажилласан өдөр, хоцролт, картын төлөв.</p>
+        <div class="fold-body">
         <div class="user-filters staff-filters">
           <label class="user-search">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
@@ -3668,6 +3719,7 @@ function hrStaffView() {
             <thead><tr><th>Ажилтан</th><th>ID · зэрэглэл</th><th>Карт</th><th>Өнөөдөр</th><th>Байршил</th><th>Ажилласан</th><th>Хоцорсон / эрт</th><th>Тасалсан</th><th>Холбоо барих</th></tr></thead>
             <tbody data-staff="rows">${parts.rows}</tbody>
           </table>
+        </div>
         </div>
       </section>
       ${planEditor(data.attendance)}
@@ -5257,6 +5309,7 @@ stage.addEventListener("click", async (event) => {
     if (!confirm(`«${item?.name || "Энэ хоол"}»-ыг цэснээс хасах уу?`)) return;
     await kitchenAction(`/api/kitchen/menu/${encodeURIComponent(button.dataset.id)}`, "DELETE", null, button, "Хоол цэснээс хасагдлаа");
   }
+  if (action === "hr-fold") toggleFold(button);
   if (action === "hist-toggle") {
     historyFilter().open = !historyFilter().open;
     repaintHistoryPanel();
