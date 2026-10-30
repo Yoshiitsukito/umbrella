@@ -1014,6 +1014,14 @@ p.tone-danger, p.tone-danger b { color: var(--danger); }
 .user-table .who .nav-avatar { width: 34px; height: 34px; flex: none; }
 .user-table .who small { display: block; color: var(--muted); }
 .user-table .acts { display: flex; gap: 6px; justify-content: flex-end; }
+.user-table .user-expand { flex: none; width: 28px; height: 28px; }
+.user-table .user-expand svg { transition: transform 0.18s ease; }
+.user-table .user-expand.is-open svg { transform: rotate(180deg); }
+.user-table tr.is-open td { border-bottom-color: transparent; background: var(--raised); }
+.user-table tr.user-detail td { padding: 4px 8px 14px 50px; background: var(--raised); }
+.user-detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 18px; margin: 0; }
+.user-detail-grid dt { font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.user-detail-grid dd { margin: 2px 0 0; font-size: 13px; color: var(--strong); overflow-wrap: anywhere; }
 .chip.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
 .admin-editor { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr); gap: 22px; align-items: start; }
 .admin-editor .idcard { width: 100%; }

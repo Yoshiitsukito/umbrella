@@ -2396,6 +2396,7 @@ const ADMIN_ICONS = {
   out: `<path d="M14 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H14"/><path d="M10 12h10M16.5 8l4 4-4 4"/>`,
   clock: `<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>`,
   back: `<path d="M19 12H5M11 6l-6 6 6 6"/>`,
+  expand: `<path d="M6 9l6 6 6-6"/>`,
   sun: `<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>`,
   moon: `<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>`,
   rest: `<path d="M4 18.5h16M6 18.5v-6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6M8.5 10.5V7.5a1.5 1.5 0 0 1 1.5-1.5h4a1.5 1.5 0 0 1 1.5 1.5v3"/>`,
@@ -2506,8 +2507,11 @@ function filterUsers() {
       row.classList.add("row-in");
     }
     row.hidden = hidden;
+    const detail = row.nextElementSibling;
+    if (detail?.classList.contains("user-detail")) detail.hidden = hidden || !userOpen().has(row.dataset.id);
     if (!hidden) shown += 1;
   }
+  syncExpandAll();
   const empty = document.querySelector(".user-empty");
   if (empty) {
     empty.hidden = shown > 0;
@@ -2515,6 +2519,79 @@ function filterUsers() {
   }
   const count = document.querySelector(".user-count");
   if (count) count.textContent = userFiltering() ? `${shown} / ${rows.length}` : "";
+}
+
+/** Users whose detail row is expanded on the admin list. */
+function userOpen() {
+  state.userOpen ||= new Set();
+  return state.userOpen;
+}
+
+function userDetailRow(user, show) {
+  const card = user.card || {};
+  const item = (label, value) => (value ? `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>` : "");
+  const date = (iso) => (iso ? localDate(iso) : "");
+  const items = [
+    item("Албан тушаал", user.title),
+    item("Эрх", ROLE_LABEL[user.role] || user.role),
+    item("И-мэйл", user.email),
+    item("Төрсөн өдөр", user.birthday),
+    item("Ангилал", card.classification),
+    item("Төсөл", card.project),
+    item("Карт олгосон", card.issued),
+    item("Карт хүчинтэй", card.expires),
+    item("Амралтаар түдгэлзсэн", card.restUntil ? `${card.restUntil.slice(0, 10)} хүртэл` : ""),
+    item("Гарын үсэг", card.signature),
+    item("Бүртгэсэн", date(user.createdAt)),
+    item("Сүүлд нэвтэрсэн", timeLabel(user.lastLoginAt) || "Нэвтрээгүй"),
+    item("Ирцийн QR", user.cardQr ? "Олгосон" : ""),
+  ].join("");
+  return `<tr class="user-detail" data-detail="${esc(user.id)}"${show ? "" : " hidden"}><td colspan="7"><dl class="user-detail-grid">${items}</dl></td></tr>`;
+}
+
+function expandButton(user, open) {
+  return `<button class="icon-btn user-expand${open ? " is-open" : ""}" type="button" data-action="user-detail" data-id="${esc(user.id)}" aria-expanded="${open}" aria-label="${esc(user.displayName)} · ${open ? "хураах" : "дэлгэрэнгүй"}" title="${open ? "Хураах" : "Дэлгэрэнгүй"}">${adminIcon("expand")}</button>`;
+}
+
+function visibleUserRows() {
+  return [...document.querySelectorAll(".user-table tr[data-search]")].filter((row) => !row.hidden);
+}
+
+function syncExpandAll() {
+  const button = stage.querySelector("[data-action='users-expand-all']");
+  if (!button) return;
+  const rows = visibleUserRows();
+  const all = rows.length > 0 && rows.every((row) => userOpen().has(row.dataset.id));
+  button.textContent = all ? "Бүгдийг хураах" : "Бүгдийг дэлгэх";
+  button.setAttribute("aria-pressed", String(all));
+}
+
+function setUserOpen(row, open) {
+  const id = row.dataset.id;
+  if (open) userOpen().add(id);
+  else userOpen().delete(id);
+  row.classList.toggle("is-open", open);
+  const button = row.querySelector(".user-expand");
+  if (button) {
+    button.classList.toggle("is-open", open);
+    button.setAttribute("aria-expanded", String(open));
+    button.title = open ? "Хураах" : "Дэлгэрэнгүй";
+  }
+  const detail = row.nextElementSibling;
+  if (detail?.classList.contains("user-detail")) detail.hidden = !open || row.hidden;
+}
+
+function toggleUserDetail(id) {
+  const row = stage.querySelector(`.user-table tr[data-search][data-id="${CSS.escape(id)}"]`);
+  if (row) setUserOpen(row, !userOpen().has(id));
+  syncExpandAll();
+}
+
+function toggleAllUsers() {
+  const rows = visibleUserRows();
+  const open = !rows.every((row) => userOpen().has(row.dataset.id));
+  for (const row of rows) setUserOpen(row, open);
+  syncExpandAll();
 }
 
 function userFilterSelects(users) {
@@ -2547,8 +2624,8 @@ function adminUsersView() {
   const rows = data
     ? people
         .map(
-          (user) => `<tr data-search="${esc(userSearchKey(user))}" data-level="${esc(user.card.clearance)}" data-status="${esc(user.card.status)}"${visible(user) ? "" : " hidden"}>
-            <td><div class="who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small><span class="code-tag" title="Нэвтрэх нэр">${esc(user.loginCode || "–")}</span> @${esc(user.username)}${user.id === me.id ? " · та" : ""}</small></div></div></td>
+          (user) => `<tr class="${userOpen().has(user.id) ? "is-open" : ""}" data-id="${esc(user.id)}" data-search="${esc(userSearchKey(user))}" data-level="${esc(user.card.clearance)}" data-status="${esc(user.card.status)}"${visible(user) ? "" : " hidden"}>
+            <td><div class="who">${expandButton(user, userOpen().has(user.id))}${avatar(user)}<div><b>${esc(user.displayName)}</b><small><span class="code-tag" title="Нэвтрэх нэр">${esc(user.loginCode || "–")}</span> @${esc(user.username)}${user.id === me.id ? " · та" : ""}</small></div></div></td>
             <td>${roleBadge(user.role)}</td>
             <td class="mono">${esc(user.card.idNumber)}</td>
             <td><select class="inline-select lv-select lv-${user.card.clearance}" data-inline="clearance" data-id="${esc(user.id)}" aria-label="${esc(user.displayName)} · зэрэглэл">${options([1, 2, 3, 4, 5], user.card.clearance, (value) => `Level ${value}`)}</select></td>
@@ -2564,7 +2641,7 @@ function adminUsersView() {
               }
               <button class="icon-btn danger" type="button" data-action="admin-delete" data-id="${esc(user.id)}" aria-label="Устгах" title="Устгах"${user.id === me.id ? " disabled" : ""}>${adminIcon("trash")}</button>
             </div></td>
-          </tr>`,
+          </tr>${userDetailRow(user, visible(user) && userOpen().has(user.id))}`,
         )
         .join("") + `<tr class="user-empty"${shown ? " hidden" : ""}><td colspan="7" class="muted">${esc(userEmptyText())}</td></tr>`
     : `<tr><td colspan="7" class="muted">Ачаалж байна…</td></tr>`;
@@ -2594,7 +2671,10 @@ function adminUsersView() {
             </label>
             ${data ? userFilterSelects(people) : ""}
           </div>
-          <button class="chip" type="button" data-action="create-user" aria-haspopup="dialog">${adminIcon("add")}Шинэ хэрэглэгч</button>
+          <div class="hist-actions">
+            ${data ? `<button class="chip fold-btn" type="button" data-action="users-expand-all" aria-pressed="false">Бүгдийг дэлгэх</button>` : ""}
+            <button class="chip" type="button" data-action="create-user" aria-haspopup="dialog">${adminIcon("add")}Шинэ хэрэглэгч</button>
+          </div>
         </div>
         <table class="user-table">
           <thead><tr><th>Хэрэглэгч · нэвтрэх нэр</th><th>Эрх</th><th>ID дугаар</th><th>Зэрэглэл</th><th>Төлөв</th><th>Сүүлд нэвтэрсэн</th><th></th></tr></thead>
@@ -5310,6 +5390,8 @@ stage.addEventListener("click", async (event) => {
     await kitchenAction(`/api/kitchen/menu/${encodeURIComponent(button.dataset.id)}`, "DELETE", null, button, "Хоол цэснээс хасагдлаа");
   }
   if (action === "hr-fold") toggleFold(button);
+  if (action === "user-detail") toggleUserDetail(button.dataset.id);
+  if (action === "users-expand-all") toggleAllUsers();
   if (action === "hist-toggle") {
     historyFilter().open = !historyFilter().open;
     repaintHistoryPanel();
