@@ -3369,12 +3369,12 @@ function rosterTable(data, users, today) {
           return `<td class="${leave ? "is-leave" : `is-${kind}`}${date === today ? " is-today" : ""}" title="${esc(`${shortDate(date)} ${WEEKDAY_SHORT[weekdayOf(date)]} · ${label}`)}">${leave ? "Ч" : PLAN_LETTER[kind]}</td>`;
         })
         .join("");
-      return `<tr class="row-in" style="--i:${index}">
+      return `<tr class="row-in" style="--i:${Math.min(index, 14)}" ${planRowAttrs("roster", planRowInfo(data, user, today))}>
           <th class="roster-who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small>${esc(planSummary(plan, today))}</small>${restTag(user)}</div></th>
           ${cells}
         </tr>`;
     })
-    .join("");
+    .join("") + (users.length ? planEmptyRow("roster", data, users, today, ROSTER_DAYS + 1) : "");
   return `
       <div class="roster-scroll">
         <table class="roster">
@@ -3445,6 +3445,100 @@ function rotationForm(user, plan, today) {
         </form>`;
 }
 
+const PLAN_MODES = { dn: "Эргэлт · өдрөөр эхэлдэг", nd: "Эргэлт · шөнөөр эхэлдэг", dd: "Эргэлт · 14 өдөр", week: "7 хоногоор" };
+
+/** Search and filters of the shift roster and the plan settings, each kept separately. */
+function planFilter(block) {
+  state.planFilters ||= {};
+  return (state.planFilters[block] ||= { query: "", today: "", mode: "", title: "" });
+}
+
+function planFiltered(block) {
+  const filter = planFilter(block);
+  return filter.today || filter.mode || filter.title;
+}
+
+function planFiltering(block) {
+  return Boolean(planFilter(block).query.trim() || planFiltered(block));
+}
+
+function planRowInfo(data, user, today) {
+  const plan = weekOf(data, user);
+  const duty = dutyOf(data, user, today, "all");
+  return {
+    key: searchFold([user.displayName, user.username, user.card?.idNumber, user.title].join(" ")),
+    today: duty.leave ? "leave" : duty.planned,
+    mode: isRotation(plan) ? patternOf(plan) : "week",
+    title: user.title || "",
+  };
+}
+
+function planRowShown(block, info) {
+  const filter = planFilter(block);
+  return userMatches(info.key, filter.query) && (!filter.today || info.today === filter.today) && (!filter.mode || info.mode === filter.mode) && (!filter.title || info.title === filter.title);
+}
+
+function planRowAttrs(block, info) {
+  return `data-plan-row data-key="${esc(info.key)}" data-today="${info.today}" data-mode="${info.mode}" data-title="${esc(info.title)}"${planRowShown(block, info) ? "" : " hidden"}`;
+}
+
+function planEmptyRow(block, data, users, today, span) {
+  const any = users.some((user) => planRowShown(block, planRowInfo(data, user, today)));
+  return `<tr class="plan-empty"${any ? " hidden" : ""}><td colspan="${span}" class="muted">Шүүлтэд тохирох ажилтан алга.</td></tr>`;
+}
+
+function planTools(block) {
+  return `<span class="tool-group fold-only">
+      ${toolButton(`${block}-search`, "search", "Ажилтан хайх", planFilter(block).query.trim())}
+      ${toolButton(`${block}-filter`, "filter", "Ажилтан шүүх", planFiltered(block))}
+    </span>`;
+}
+
+function planToolRow(block, data, users, today) {
+  const filter = planFilter(block);
+  const query = filter.query.trim();
+  const active = planFiltered(block);
+  const infos = users.map((user) => planRowInfo(data, user, today));
+  const tally = (key, value) => infos.filter((info) => info[key] === value).length;
+  const shown = infos.filter((info) => planRowShown(block, info)).length;
+  const pick = (name, label, entries) =>
+    `<select class="user-filter" data-filter="plan-${block}-${name}" aria-label="${label}">${entries
+      .map(([value, text]) => `<option value="${esc(value)}"${value === filter[name] ? " selected" : ""}>${esc(text)}</option>`)
+      .join("")}</select>`;
+  const titles = [...new Set(infos.map((info) => info.title).filter(Boolean))].sort((a, b) => a.localeCompare(b, "mn"));
+  const modes = Object.entries(PLAN_MODES).filter(([value]) => tally("mode", value) || value === filter.mode);
+  return `<div class="user-filters tool-row" data-tool-row${toolRowHidden([`${block}-search`, query], [`${block}-filter`, active])}>
+        <label class="user-search" ${toolPanelAttrs(`${block}-search`, query)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+          <input type="search" data-filter="plan-${block}-query" value="${esc(filter.query)}" placeholder="Нэр, ID, албан тушаал" aria-label="Ажилтан хайх" autocomplete="off" spellcheck="false" />
+          <span class="user-count" data-plan-count aria-live="polite">${planFiltering(block) ? `${shown} / ${infos.length}` : ""}</span>
+        </label>
+        <span class="tool-group" ${toolPanelAttrs(`${block}-filter`, active)}>
+          ${pick("today", "Өнөөдрийн ээлжээр шүүх", [["", "Өнөөдөр: бүгд"], ...Object.entries(STAFF_TODAY).map(([value, text]) => [value, `${text} (${tally("today", value)})`])])}
+          ${pick("mode", "Хуваарийн төрлөөр шүүх", [["", "Хуваарь: бүгд"], ...modes.map(([value, text]) => [value, `${text} (${tally("mode", value)})`])])}
+          ${titles.length ? pick("title", "Албан тушаалаар шүүх", [["", "Албан тушаал: бүгд"], ...titles.map((title) => [title, `${title} (${tally("title", title)})`])]) : ""}
+        </span>
+      </div>`;
+}
+
+/** Hides rows in place so the search box keeps its focus while typing. */
+function filterPlanRows(block) {
+  const box = stage.querySelector(`[data-fold-box="${block}"]`);
+  if (!box) return;
+  const rows = [...box.querySelectorAll("tr[data-plan-row]")];
+  let shown = 0;
+  for (const row of rows) {
+    const { key, today, mode, title } = row.dataset;
+    row.hidden = !planRowShown(block, { key, today, mode, title });
+    if (!row.hidden) shown += 1;
+  }
+  const empty = box.querySelector("tr.plan-empty");
+  if (empty) empty.hidden = shown > 0;
+  const count = box.querySelector("[data-plan-count]");
+  if (count) count.textContent = planFiltering(block) ? `${shown} / ${rows.length}` : "";
+  syncToolDots();
+}
+
 function planSettings(data, users, today) {
   const rows = users
     .map((user, index) => {
@@ -3459,21 +3553,21 @@ function planSettings(data, users, today) {
             <option value="week"${rotating ? "" : " selected"}>7 хоногоор</option>
             <option value="rotation"${rotating ? " selected" : ""}>Эргэлт 7·7·14</option>
           </select>`;
-      return `<tr class="row-in" style="--i:${index}">
+      return `<tr class="row-in" style="--i:${Math.min(index, 14)}" ${planRowAttrs("settings", planRowInfo(data, user, today))}>
           <td><div class="who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small>${note}${hr ? " · Хүний нөөц" : ""}</small></div></div></td>
           <td>${mode}</td>
           <td>${rotating ? rotationForm(user, plan, today) : weekPicker(user, planOf(plan))}</td>
         </tr>`;
     })
-    .join("");
+    .join("") + (users.length ? planEmptyRow("settings", data, users, today, 3) : "");
   return `
       <div class="fold-box${hrFold().settings ? " is-open" : ""}" data-fold-box="settings">
         <div class="plan-sub-head">
           <h3 class="plan-sub">Хуваарь тохируулах</h3>
-          ${foldButton("settings")}
+          <div class="tool-bar">${planTools("settings")}${foldButton("settings")}</div>
         </div>
         <p class="hist-summary fold-summary">${users.length} ажилтны хуваарийн төрөл, эхлэх огноо, эхлэх ээлжийг эндээс өөрчилнө.</p>
-        <div class="fold-body"><div class="fold-inner"><div class="plan-scroll"><table class="user-table plan-table"><thead><tr><th>Хэрэглэгч</th><th>Төрөл</th><th>Тохиргоо</th></tr></thead><tbody>${rows || `<tr><td colspan="3" class="muted">Хэрэглэгч алга.</td></tr>`}</tbody></table></div></div></div>
+        <div class="fold-body"><div class="fold-inner">${planToolRow("settings", data, users, today)}<div class="plan-scroll"><table class="user-table plan-table"><thead><tr><th>Хэрэглэгч</th><th>Төрөл</th><th>Тохиргоо</th></tr></thead><tbody>${rows || `<tr><td colspan="3" class="muted">Хэрэглэгч алга.</td></tr>`}</tbody></table></div></div></div>
       </div>`;
 }
 
@@ -3562,6 +3656,10 @@ function syncToolDots() {
   const mark = (name, on) => stage.querySelector(`[data-tool="${name}"]`)?.classList.toggle("is-active", Boolean(on));
   mark("users-search", state.userQuery?.trim());
   mark("users-filter", state.userLevel || state.userStatus);
+  for (const block of ["roster", "settings"]) {
+    mark(`${block}-search`, planFilter(block).query.trim());
+    mark(`${block}-filter`, planFiltered(block));
+  }
   const staff = state.staff;
   if (staff) {
     mark("staff-search", staff.query.trim());
@@ -3582,10 +3680,10 @@ function planEditor(data) {
       <div class="fold-box${hrFold().roster ? " is-open" : ""}" data-fold-box="roster">
         <div class="admin-users-head">
           <h2>Ээлжийн хуваарь <small>Эргэлт: 7 өдөр → 7 шөнө → 14 амралт, шөнөөр эхэлбэл 7 шөнө → 7 өдөр → 14 амралт, хүний нөөц 14 өдөр → 14 амралт. Автоматаар давтагдана</small></h2>
-          ${foldButton("roster")}
+          <div class="tool-bar">${planTools("roster")}${foldButton("roster")}</div>
         </div>
         <p class="plan-tally">Өнөөдөр: <span class="is-day">${PLAN_LABEL.day} ${tally.day}</span><span class="is-night">${PLAN_LABEL.night} ${tally.night}</span><span class="is-off">${PLAN_LABEL.off} ${tally.off}</span></p>
-        <div class="fold-body"><div class="fold-inner">${rosterTable(data, users, today)}</div></div>
+        <div class="fold-body"><div class="fold-inner">${planToolRow("roster", data, users, today)}${rosterTable(data, users, today)}</div></div>
       </div>
       ${planSettings(data, users, today)}
     </section>`;
@@ -5970,6 +6068,12 @@ stage.addEventListener("input", (event) => {
     historyFilter()[filter.slice(5)] = event.target.value;
     if (filter === "hist-day") repaintHistoryPanel();
     else paintHistory();
+    return;
+  }
+  const planField = filter?.match(/^plan-(roster|settings)-(query|today|mode|title)$/);
+  if (planField) {
+    planFilter(planField[1])[planField[2]] = event.target.value;
+    filterPlanRows(planField[1]);
     return;
   }
   if (filter?.startsWith("staff-")) {
