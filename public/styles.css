@@ -1490,7 +1490,18 @@ b .leave-type { padding: 0 6px; }
 @media (prefers-reduced-motion: reduce) { .fold-box > .fold-body, .fold-box:not(.is-open) > .fold-body { transition: none; } }
 .fold-box > .fold-summary { margin: 0; }
 .fold-box:not(.is-open) > .plan-tally { margin-bottom: 0; }
-.fold-btn { flex: none; min-width: 108px; justify-content: center; }
+.fold-btn { flex: none; }
+.fold-btn svg { transition: transform 0.2s ease; }
+.fold-btn.is-open svg { transform: rotate(180deg); }
+.tool-bar, .tool-group { display: flex; align-items: center; gap: 6px; flex: none; }
+.tool-bar { margin-left: auto; }
+.tool-btn { position: relative; flex: none; }
+.tool-btn[aria-pressed="true"] { border-color: var(--red); color: var(--strong); background: var(--red-soft); }
+.tool-btn.is-active::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 2px var(--btn); }
+.tool-row { flex-wrap: wrap; justify-content: flex-start; margin: 0 0 12px; }
+.tool-row .user-search { flex: 1 1 260px; max-width: 420px; }
+.tool-row .tool-group { flex-wrap: wrap; flex: 0 1 auto; }
+.tool-row[hidden], [data-tool-panel][hidden] { display: none; }
 .plan-week-pick { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-week-pick label { display: grid; gap: 2px; justify-items: center; }
 .plan-week-pick small { color: var(--muted); font-size: 11px; }

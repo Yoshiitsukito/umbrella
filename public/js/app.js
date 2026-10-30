@@ -2397,6 +2397,10 @@ const ADMIN_ICONS = {
   clock: `<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>`,
   back: `<path d="M19 12H5M11 6l-6 6 6 6"/>`,
   expand: `<path d="M6 9l6 6 6-6"/>`,
+  search: `<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>`,
+  filter: `<path d="M4 5.5h16l-6.2 7.3v5.4l-3.6 2v-7.4z"/>`,
+  unfold: `<path d="M12 3.5v17M8 7.5l4-4 4 4M8 16.5l4 4 4-4"/>`,
+  foldAll: `<path d="M8 3.5l4 4 4-4M8 20.5l4-4 4 4M4.5 12h15"/>`,
   sun: `<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>`,
   moon: `<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>`,
   rest: `<path d="M4 18.5h16M6 18.5v-6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6M8.5 10.5V7.5a1.5 1.5 0 0 1 1.5-1.5h4a1.5 1.5 0 0 1 1.5 1.5v3"/>`,
@@ -2512,6 +2516,7 @@ function filterUsers() {
     if (!hidden) shown += 1;
   }
   syncExpandAll();
+  syncToolDots();
   const empty = document.querySelector(".user-empty");
   if (empty) {
     empty.hidden = shown > 0;
@@ -2562,7 +2567,10 @@ function syncExpandAll() {
   if (!button) return;
   const rows = visibleUserRows();
   const all = rows.length > 0 && rows.every((row) => userOpen().has(row.dataset.id));
-  button.textContent = all ? "Бүгдийг хураах" : "Бүгдийг дэлгэх";
+  const label = all ? "Бүгдийг хураах" : "Бүгдийг дэлгэх";
+  button.innerHTML = adminIcon(all ? "foldAll" : "unfold");
+  button.setAttribute("aria-label", label);
+  button.title = label;
   button.setAttribute("aria-pressed", String(all));
 }
 
@@ -2663,21 +2671,33 @@ function adminUsersView() {
       <section class="panel admin-users fold-box${hrFold().users ? " is-open" : ""}" data-fold-box="users">
         <div class="admin-users-head">
           <h2>Хэрэглэгчид</h2>
-          <div class="user-filters fold-only">
-            <label class="user-search">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-              <input type="search" data-filter="users" value="${esc(query)}" placeholder="ID дугаар, овог нэрээр хайх" aria-label="Хэрэглэгч хайх: ID дугаар эсвэл овог нэр" autocomplete="off" spellcheck="false" />
-              <span class="user-count" aria-live="polite">${data && userFiltering() ? `${shown} / ${people.length}` : ""}</span>
-            </label>
-            ${data ? userFilterSelects(people) : ""}
-          </div>
-          <div class="hist-actions">
-            ${data ? `<button class="chip fold-btn fold-only" type="button" data-action="users-expand-all" aria-pressed="false">Бүгдийг дэлгэх</button>` : ""}
-            <button class="chip" type="button" data-action="create-user" aria-haspopup="dialog">${adminIcon("add")}Шинэ хэрэглэгч</button>
+          <div class="tool-bar">
+            ${
+              data
+                ? `<span class="tool-group fold-only">
+              ${toolButton("users-search", "search", "Хайх", query.trim())}
+              ${toolButton("users-filter", "filter", "Шүүх", state.userLevel || state.userStatus)}
+              <button class="icon-btn tool-btn" type="button" data-action="users-expand-all" aria-pressed="false" aria-label="Бүгдийг дэлгэх" title="Бүгдийг дэлгэх">${adminIcon("unfold")}</button>
+            </span>`
+                : ""
+            }
+            <button class="icon-btn tool-btn" type="button" data-action="create-user" aria-haspopup="dialog" aria-label="Шинэ хэрэглэгч" title="Шинэ хэрэглэгч">${adminIcon("add")}</button>
             ${foldButton("users")}
           </div>
         </div>
         <div class="fold-body"><div class="fold-inner">
+        ${
+          data
+            ? `<div class="user-filters tool-row" data-tool-row${toolRowHidden(["users-search", query.trim()], ["users-filter", state.userLevel || state.userStatus])}>
+          <label class="user-search" ${toolPanelAttrs("users-search", query.trim())}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+            <input type="search" data-filter="users" value="${esc(query)}" placeholder="ID дугаар, овог нэрээр хайх" aria-label="Хэрэглэгч хайх: ID дугаар эсвэл овог нэр" autocomplete="off" spellcheck="false" />
+            <span class="user-count" aria-live="polite">${userFiltering() ? `${shown} / ${people.length}` : ""}</span>
+          </label>
+          <span class="tool-group" ${toolPanelAttrs("users-filter", state.userLevel || state.userStatus)}>${userFilterSelects(people)}</span>
+        </div>`
+            : ""
+        }
         <table class="user-table">
           <thead><tr><th>Хэрэглэгч · нэвтрэх нэр</th><th>Эрх</th><th>ID дугаар</th><th>Зэрэглэл</th><th>Төлөв</th><th>Сүүлд нэвтэрсэн</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
@@ -3181,8 +3201,8 @@ function historyPanel(data, people, now) {
       <div class="admin-users-head">
         <h2>Ирцийн түүх <small>${shortDate(min)}-аас хойш · ${HISTORY_DAYS} хоног хадгална</small></h2>
         <div class="hist-actions">
-          ${filter.open ? `<button class="chip" type="button" data-action="hist-csv">${adminIcon("download")}CSV</button>` : ""}
-          <button class="chip" type="button" data-action="hist-toggle" aria-expanded="${filter.open}">${filter.open ? "Хураах" : "Ирцийн түүх харах"}</button>
+          ${filter.open ? `<button class="icon-btn tool-btn" type="button" data-action="hist-csv" aria-label="CSV татах" title="CSV татах">${adminIcon("download")}</button>` : ""}
+          <button class="icon-btn fold-btn${filter.open ? " is-open" : ""}" type="button" data-action="hist-toggle" aria-expanded="${filter.open}" aria-label="${filter.open ? "Хураах" : "Ирцийн түүх харах"}" title="${filter.open ? "Хураах" : "Ирцийн түүх харах"}">${adminIcon("expand")}</button>
         </div>
       </div>
       ${filter.open ? `<div class="user-filters hist-filters">${historyControls(data, now)}</div>` : `<p class="hist-summary">${shortDate(min)} – ${shortDate(max)} хооронд өдөр бүрийн ирц, ирсэн гарсан цаг.</p>`}
@@ -3473,9 +3493,22 @@ function hrFold() {
   return state.hrFold;
 }
 
+/** A chevron icon button that collapses (points up) or expands (points down) a block. */
+function foldIcon(action, open, attrs = "") {
+  const label = open ? "Хураах" : "Дэлгэрэнгүй";
+  return `<button class="icon-btn fold-btn${open ? " is-open" : ""}" type="button" data-action="${action}" ${attrs} aria-expanded="${open}" aria-label="${label}" title="${label}">${adminIcon("expand")}</button>`;
+}
+
+function setFoldIcon(button, open) {
+  const label = open ? "Хураах" : "Дэлгэрэнгүй";
+  button.classList.toggle("is-open", open);
+  button.setAttribute("aria-expanded", String(open));
+  button.setAttribute("aria-label", label);
+  button.title = label;
+}
+
 function foldButton(name) {
-  const open = Boolean(hrFold()[name]);
-  return `<button class="chip fold-btn" type="button" data-action="hr-fold" data-fold="${name}" aria-expanded="${open}">${open ? "Хураах" : "Дэлгэрэнгүй"}</button>`;
+  return foldIcon("hr-fold", Boolean(hrFold()[name]), `data-fold="${name}"`);
 }
 
 function toggleFold(button) {
@@ -3488,8 +3521,52 @@ function toggleFold(button) {
     /* private mode: the choice lasts until reload */
   }
   stage.querySelector(`[data-fold-box="${name}"]`)?.classList.toggle("is-open", fold[name]);
-  button.setAttribute("aria-expanded", String(fold[name]));
-  button.textContent = fold[name] ? "Хураах" : "Дэлгэрэнгүй";
+  setFoldIcon(button, fold[name]);
+}
+
+/**
+ * Search and filter rows hidden behind toolbar icons. A row starts open while its search or filter is set;
+ * the icon keeps a dot while one is set, even with the row closed.
+ */
+function toolOpen(name, active) {
+  return state.tools?.[name] ?? Boolean(active);
+}
+
+function toolButton(name, icon, label, active) {
+  const open = toolOpen(name, active);
+  return `<button class="icon-btn tool-btn${active ? " is-active" : ""}" type="button" data-action="tool-toggle" data-tool="${name}" aria-pressed="${open}" aria-label="${label}" title="${label}">${adminIcon(icon)}</button>`;
+}
+
+function toolPanelAttrs(name, active) {
+  return `data-tool-panel="${name}"${toolOpen(name, active) ? "" : " hidden"}`;
+}
+
+function toolRowHidden(...panels) {
+  return panels.some(([name, active]) => toolOpen(name, active)) ? "" : " hidden";
+}
+
+function toggleTool(button) {
+  const name = button.dataset.tool;
+  const open = button.getAttribute("aria-pressed") !== "true";
+  state.tools = { ...state.tools, [name]: open };
+  button.setAttribute("aria-pressed", String(open));
+  const panel = stage.querySelector(`[data-tool-panel="${name}"]`);
+  if (!panel) return;
+  panel.hidden = !open;
+  const row = panel.closest("[data-tool-row]");
+  if (row) row.hidden = ![...row.querySelectorAll("[data-tool-panel]")].some((item) => !item.hidden);
+  if (open) panel.querySelector("input, select")?.focus();
+}
+
+function syncToolDots() {
+  const mark = (name, on) => stage.querySelector(`[data-tool="${name}"]`)?.classList.toggle("is-active", Boolean(on));
+  mark("users-search", state.userQuery?.trim());
+  mark("users-filter", state.userLevel || state.userStatus);
+  const staff = state.staff;
+  if (staff) {
+    mark("staff-search", staff.query.trim());
+    mark("staff-filter", staff.today || staff.presence || staff.status || staff.title);
+  }
 }
 
 function planEditor(data) {
@@ -3769,6 +3846,9 @@ function hrStaffView() {
   const data = state.admin;
   if (!data?.attendance) return adminLoading();
   const parts = staffParts(data);
+  const filter = staffFilter();
+  const staffSearch = filter.query.trim();
+  const staffFiltered = filter.today || filter.presence || filter.status || filter.title;
   return `
     <div class="admin-page staff-page">
       <section class="panel admin-hero">
@@ -3782,20 +3862,24 @@ function hrStaffView() {
       <section class="panel admin-users fold-box${hrFold().staff ? " is-open" : ""}" data-fold-box="staff">
         <div class="admin-users-head">
           <h2>Ажилтнууд <small data-staff="range">${parts.range}</small></h2>
-          <div class="hist-actions">
-            <button class="chip fold-only" type="button" data-action="staff-csv">${adminIcon("download")}CSV</button>
+          <div class="tool-bar">
+            <span class="tool-group fold-only">
+              ${toolButton("staff-search", "search", "Хайх", staffSearch)}
+              ${toolButton("staff-filter", "filter", "Шүүх, хугацаа сонгох", staffFiltered)}
+              <button class="icon-btn tool-btn" type="button" data-action="staff-csv" aria-label="CSV татах" title="CSV татах">${adminIcon("download")}</button>
+            </span>
             ${foldButton("staff")}
           </div>
         </div>
         <p class="hist-summary fold-summary">${data.users.length} ажилтны ээлж, ирц, ажилласан өдөр, хоцролт, картын төлөв.</p>
         <div class="fold-body"><div class="fold-inner">
-        <div class="user-filters staff-filters">
-          <label class="user-search">
+        <div class="user-filters staff-filters tool-row" data-tool-row${toolRowHidden(["staff-search", staffSearch], ["staff-filter", staffFiltered])}>
+          <label class="user-search" ${toolPanelAttrs("staff-search", staffSearch)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
             <input type="search" data-filter="staff-query" value="${esc(staffFilter().query)}" placeholder="Нэр, ID, албан тушаал, и-мэйл" aria-label="Ажилтан хайх" autocomplete="off" spellcheck="false" />
             <span class="user-count" data-staff="count" aria-live="polite">${parts.count}</span>
           </label>
-          ${staffSelects(data)}
+          <span class="tool-group" ${toolPanelAttrs("staff-filter", staffFiltered)}>${staffSelects(data)}</span>
         </div>
         <div class="staff-scroll">
           <table class="user-table staff-table">
@@ -3814,6 +3898,7 @@ function paintStaff() {
   if (!page || !state.admin?.attendance) return render();
   const parts = staffParts(state.admin);
   for (const node of page.querySelectorAll("[data-staff]")) node.innerHTML = parts[node.dataset.staff];
+  syncToolDots();
 }
 
 function downloadStaffCsv() {
@@ -5393,6 +5478,7 @@ stage.addEventListener("click", async (event) => {
     await kitchenAction(`/api/kitchen/menu/${encodeURIComponent(button.dataset.id)}`, "DELETE", null, button, "Хоол цэснээс хасагдлаа");
   }
   if (action === "hr-fold") toggleFold(button);
+  if (action === "tool-toggle") toggleTool(button);
   if (action === "user-detail") toggleUserDetail(button.dataset.id);
   if (action === "users-expand-all") toggleAllUsers();
   if (action === "hist-toggle") {
