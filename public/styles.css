@@ -1378,7 +1378,8 @@ b .leave-type { padding: 0 6px; }
 .plan-tally .is-night { --tc: var(--st-extra); }
 .plan-tally .is-off { --tc: var(--muted); }
 
-.roster-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.roster-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; transform: rotateX(180deg); }
+.roster-scroll > .roster { transform: rotateX(180deg); }
 .roster { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12px; }
 .roster th, .roster td { padding: 0; text-align: center; border-bottom: 1px solid var(--line); }
 .roster thead th { position: sticky; top: 0; background: var(--panel, var(--raised)); color: var(--muted); font-weight: 600; }
