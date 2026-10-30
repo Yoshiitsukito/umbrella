@@ -3311,7 +3311,9 @@ function leaveRequests(data, userById) {
       const [label, cls] = LEAVE_STATUS[leave.status];
       const days = Math.round((Date.parse(leave.to) - Date.parse(leave.from)) / DAY_MS) + 1;
       const actions =
-        leave.status === "pending"
+        leave.status === "pending" && isSelf(user)
+          ? `<span class="tag">Өөр хүний нөөц шийдвэрлэнэ</span>`
+          : leave.status === "pending"
           ? `<div class="leave-actions">
               <button class="chip is-approve" type="button" data-action="leave-decide" data-status="approved" data-id="${esc(leave.id)}">${adminIcon("check")}Зөвшөөрөх</button>
               <button class="chip is-reject" type="button" data-action="leave-decide" data-status="rejected" data-id="${esc(leave.id)}">${adminIcon("cross")}Татгалзах</button>
@@ -3337,6 +3339,9 @@ function planSummary(plan, today) {
   const phase = rotationPhase(plan, today);
   return `Эргэлт · ${PLAN_LABEL[phase.kind]} ${phase.index}/${phase.length}`;
 }
+
+const isSelf = (user) => Boolean(user && state.me && user.id === state.me.id);
+const selfMark = (user) => (isSelf(user) ? " · та" : "");
 
 function restTag(user) {
   return user.card?.restUntil ? `<em class="rest-tag">ID карт ${shortDate(user.card.restUntil)} хүртэл түдгэлзсэн</em>` : "";
@@ -3370,7 +3375,7 @@ function rosterTable(data, users, today) {
         })
         .join("");
       return `<tr class="row-in" style="--i:${Math.min(index, 14)}" ${planRowAttrs("roster", planRowInfo(data, user, today))}>
-          <th class="roster-who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small>${esc(planSummary(plan, today))}</small>${restTag(user)}</div></th>
+          <th class="roster-who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small>${esc(planSummary(plan, today))}${selfMark(user)}</small>${restTag(user)}</div></th>
           ${cells}
         </tr>`;
     })
@@ -3554,9 +3559,15 @@ function planSettings(data, users, today) {
             <option value="rotation"${rotating ? " selected" : ""}>Эргэлт 7·7·14</option>
           </select>`;
       return `<tr class="row-in" style="--i:${Math.min(index, 14)}" ${planRowAttrs("settings", planRowInfo(data, user, today))}>
-          <td><div class="who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small>${note}${hr ? " · Хүний нөөц" : ""}</small></div></div></td>
+          <td><div class="who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small>${note}${hr ? " · Хүний нөөц" : ""}${selfMark(user)}</small></div></div></td>
           <td>${mode}</td>
-          <td>${rotating ? rotationForm(user, plan, today) : weekPicker(user, planOf(plan))}</td>
+          <td>${
+            isSelf(user)
+              ? `<span class="muted self-note">${esc(isRotation(plan) ? rotationText(plan, today) : planSummary(plan, today))} · Өөрийн хуваарийг өөр хүний нөөцийн ажилтан өөрчилнө</span>`
+              : rotating
+                ? rotationForm(user, plan, today)
+                : weekPicker(user, planOf(plan))
+          }</td>
         </tr>`;
     })
     .join("") + (users.length ? planEmptyRow("settings", data, users, today, 3) : "");
@@ -3889,7 +3900,7 @@ function staffRows(list) {
       const todayLabel = item.leave ? LEAVE_LABEL[item.leave.type] : `${PLAN_LABEL[item.today]} ${PLAN_HOURS[item.today]}`.trim();
       const here = presence.state === "in";
       return `<tr class="row-in" style="--i:${Math.min(index, 14)}">
-        <td><div class="who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small>@${esc(user.username)}${user.title ? ` · ${esc(user.title)}` : ""}${user.role === "user" ? "" : ` · ${ROLE_LABEL[user.role]}`}</small></div></div></td>
+        <td><div class="who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small>@${esc(user.username)}${user.title ? ` · ${esc(user.title)}` : ""}${user.role === "user" ? "" : ` · ${ROLE_LABEL[user.role]}`}${selfMark(user)}</small></div></div></td>
         <td class="mono">${esc(user.card?.idNumber || "–")}<small class="staff-sub">Level ${esc(user.card?.clearance ?? "–")}</small></td>
         <td>${statusBadge(user.card?.status || "–")}${restTag(user)}</td>
         <td><span class="staff-today is-${item.today}">${esc(todayLabel)}</span></td>

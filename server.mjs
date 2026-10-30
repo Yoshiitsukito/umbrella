@@ -890,14 +890,11 @@ function adminView(db) {
 
 const HR_CARD_FIELDS = ["idNumber", "clearance", "status", "expires", "issued", "classification", "restUntil"];
 
-/**
- * What human resources sees: staff records without login secrets or card keys, plus attendance.
- * The viewer's own record, plans, scans and leave requests are left out.
- */
-function hrView(db, viewerId = null) {
+/** What human resources sees: staff records without login secrets or card keys, plus attendance. */
+function hrView(db) {
   const shifts = shiftWindows();
   const users = db.users
-    .filter((user) => STAFF_ROLES.includes(user.role) && user.id !== viewerId)
+    .filter((user) => STAFF_ROLES.includes(user.role))
     .map((user) => ({
       id: user.id,
       username: user.username,
@@ -1207,7 +1204,7 @@ async function routeKitchen(req, res, url, me) {
 
 async function routeHr(req, res, url, me) {
   if (req.method === "GET" && url.pathname === "/api/hr") {
-    json(res, 200, await inspect((db) => hrView(db, me.id)));
+    json(res, 200, await inspect((db) => hrView(db)));
     return;
   }
   const planMatch = url.pathname.match(/^\/api\/hr\/shift-plans\/([\w-]+)$/);
@@ -1234,7 +1231,7 @@ async function routeHr(req, res, url, me) {
       db.shiftPlans[user.id] = plan;
       noticeFor(db, user.id, "plan", planNotice(before, plan, addDays(today, 1)));
       applyRestCards(db);
-      return hrView(db, me.id);
+      return hrView(db);
     });
     json(res, result.error ? result.status : 200, result);
     return;
@@ -1253,7 +1250,7 @@ async function routeHr(req, res, url, me) {
       if (leave.uid === me.id) return { error: "Өөрийн хүсэлтийг өөрөө шийдвэрлэх боломжгүй", status: 403 };
       Object.assign(leave, { status, decidedAt: new Date().toISOString(), decidedBy: me.displayName });
       noticeFor(db, leave.uid, status === "approved" ? "leave-ok" : "leave-no", leaveNotice(leave));
-      return hrView(db, me.id);
+      return hrView(db);
     });
     json(res, result.error ? result.status : 200, result);
     return;
@@ -1269,7 +1266,7 @@ async function routeHr(req, res, url, me) {
       200,
       await update((db) => {
         db.announcements = pruneAnnouncements([...(db.announcements || []), announcement]);
-        return hrView(db, me.id);
+        return hrView(db);
       }),
     );
     return;
@@ -1280,7 +1277,7 @@ async function routeHr(req, res, url, me) {
       const list = db.announcements || [];
       if (!list.some((item) => item.id === announceMatch[1])) return { error: "Зарлал олдсонгүй", status: 404 };
       db.announcements = list.filter((item) => item.id !== announceMatch[1]);
-      return hrView(db, me.id);
+      return hrView(db);
     });
     json(res, result.error ? result.status : 200, result);
     return;
