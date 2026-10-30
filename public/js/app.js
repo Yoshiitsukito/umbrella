@@ -2660,10 +2660,10 @@ function adminUsersView() {
           ${stat(stats?.scansToday, "Өнөөдрийн ирц")}
         </div>
       </section>
-      <section class="panel admin-users">
+      <section class="panel admin-users fold-box${hrFold().users ? " is-open" : ""}" data-fold-box="users">
         <div class="admin-users-head">
           <h2>Хэрэглэгчид</h2>
-          <div class="user-filters">
+          <div class="user-filters fold-only">
             <label class="user-search">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
               <input type="search" data-filter="users" value="${esc(query)}" placeholder="ID дугаар, овог нэрээр хайх" aria-label="Хэрэглэгч хайх: ID дугаар эсвэл овог нэр" autocomplete="off" spellcheck="false" />
@@ -2672,14 +2672,17 @@ function adminUsersView() {
             ${data ? userFilterSelects(people) : ""}
           </div>
           <div class="hist-actions">
-            ${data ? `<button class="chip fold-btn" type="button" data-action="users-expand-all" aria-pressed="false">Бүгдийг дэлгэх</button>` : ""}
+            ${data ? `<button class="chip fold-btn fold-only" type="button" data-action="users-expand-all" aria-pressed="false">Бүгдийг дэлгэх</button>` : ""}
             <button class="chip" type="button" data-action="create-user" aria-haspopup="dialog">${adminIcon("add")}Шинэ хэрэглэгч</button>
+            ${foldButton("users")}
           </div>
         </div>
+        <div class="fold-body"><div class="fold-inner">
         <table class="user-table">
           <thead><tr><th>Хэрэглэгч · нэвтрэх нэр</th><th>Эрх</th><th>ID дугаар</th><th>Зэрэглэл</th><th>Төлөв</th><th>Сүүлд нэвтэрсэн</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
+        </div></div>
       </section>
     </div>`;
 }
@@ -3450,13 +3453,13 @@ function planSettings(data, users, today) {
           ${foldButton("settings")}
         </div>
         <p class="hist-summary fold-summary">${users.length} ажилтны хуваарийн төрөл, эхлэх огноо, эхлэх ээлжийг эндээс өөрчилнө.</p>
-        <div class="fold-body plan-scroll"><table class="user-table plan-table"><thead><tr><th>Хэрэглэгч</th><th>Төрөл</th><th>Тохиргоо</th></tr></thead><tbody>${rows || `<tr><td colspan="3" class="muted">Хэрэглэгч алга.</td></tr>`}</tbody></table></div>
+        <div class="fold-body"><div class="fold-inner"><div class="plan-scroll"><table class="user-table plan-table"><thead><tr><th>Хэрэглэгч</th><th>Төрөл</th><th>Тохиргоо</th></tr></thead><tbody>${rows || `<tr><td colspan="3" class="muted">Хэрэглэгч алга.</td></tr>`}</tbody></table></div></div></div>
       </div>`;
 }
 
 const HR_FOLD_KEY = "umb_hr_fold";
 
-/** Which HR staff-page blocks are expanded; remembered on this device. */
+/** Which collapsible admin and HR blocks are expanded; remembered on this device. */
 function hrFold() {
   if (!state.hrFold) {
     let saved = {};
@@ -3465,7 +3468,7 @@ function hrFold() {
     } catch {
       /* a broken value just falls back to the defaults */
     }
-    state.hrFold = { staff: true, roster: false, settings: false, ...saved };
+    state.hrFold = { staff: true, roster: false, settings: false, users: true, ...saved };
   }
   return state.hrFold;
 }
@@ -3505,7 +3508,7 @@ function planEditor(data) {
           ${foldButton("roster")}
         </div>
         <p class="plan-tally">Өнөөдөр: <span class="is-day">${PLAN_LABEL.day} ${tally.day}</span><span class="is-night">${PLAN_LABEL.night} ${tally.night}</span><span class="is-off">${PLAN_LABEL.off} ${tally.off}</span></p>
-        <div class="fold-body">${rosterTable(data, users, today)}</div>
+        <div class="fold-body"><div class="fold-inner">${rosterTable(data, users, today)}</div></div>
       </div>
       ${planSettings(data, users, today)}
     </section>`;
@@ -3785,7 +3788,7 @@ function hrStaffView() {
           </div>
         </div>
         <p class="hist-summary fold-summary">${data.users.length} ажилтны ээлж, ирц, ажилласан өдөр, хоцролт, картын төлөв.</p>
-        <div class="fold-body">
+        <div class="fold-body"><div class="fold-inner">
         <div class="user-filters staff-filters">
           <label class="user-search">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
@@ -3800,7 +3803,7 @@ function hrStaffView() {
             <tbody data-staff="rows">${parts.rows}</tbody>
           </table>
         </div>
-        </div>
+        </div></div>
       </section>
       ${planEditor(data.attendance)}
     </div>`;
