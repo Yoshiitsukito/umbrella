@@ -1400,7 +1400,7 @@ b .leave-type { padding: 0 6px; }
 .roster td.is-off { --rc: var(--muted); background: transparent; font-weight: 500; opacity: 0.7; }
 .roster td.is-leave { --rc: var(--st-leave); }
 .roster td.is-today { box-shadow: inset 2px 0 0 var(--red), inset -2px 0 0 var(--red); }
-.roster tbody tr:hover td { background: color-mix(in srgb, var(--rc) 26%, transparent); }
+.roster tbody tr:hover td { background-color: color-mix(in srgb, var(--rc) 26%, transparent); }
 .rest-tag { display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-style: normal; font-weight: 700; color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
 .roster-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 .roster-legend span { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: -8px; border-radius: 5px; font-weight: 700; color: var(--rc); background: color-mix(in srgb, var(--rc) 18%, transparent); }
@@ -1408,6 +1408,18 @@ b .leave-type { padding: 0 6px; }
 .roster-legend .is-night { --rc: var(--st-extra); }
 .roster-legend .is-off { --rc: var(--muted); }
 .roster-legend .is-leave { --rc: var(--st-leave); }
+.roster-periods { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.roster-periods .chip.is-on { border-color: var(--red); color: var(--strong); background: var(--red-soft); }
+.roster td[class*="st-"], .roster-legend span[class*="st-"] { background-image: linear-gradient(to top, var(--mk) 0 3px, transparent 3px); }
+.roster .st-ok, .roster-legend .st-ok, .roster .st-live { --mk: var(--st-ok); }
+.roster .st-late, .roster-legend .st-late { --mk: #ff6d00; }
+.roster .st-absent, .roster-legend .st-absent, .roster .st-missing { --mk: var(--st-absent); }
+.roster td.st-absent, .roster-legend .st-absent { text-decoration: line-through; }
+.roster td.st-extra, .roster-legend .st-extra { --rc: var(--st-extra); --mk: var(--st-extra); opacity: 1; }
+.roster th.roster-sum { min-width: 72px; padding: 0 8px; font-size: 10.5px; letter-spacing: 0.04em; border-left: 1px solid var(--line); }
+.roster td.roster-sum { min-width: 72px; padding: 0 8px; color: var(--strong); background: transparent; border-left: 1px solid var(--line); }
+.roster td.roster-sum.is-warn { color: var(--st-late); }
+.roster td.roster-sum.is-bad { color: var(--danger); }
 
 .staff-stats .is-pos b { color: var(--st-ok); }
 .staff-stats .is-neg b { color: var(--danger); }

@@ -9,6 +9,7 @@ import {
   addDays,
   CYCLE_WORK_DAYS,
   cycleRange,
+  datesBetween,
   dayRecord,
   isWorkedDay,
   LEAVE_LABEL,
@@ -3347,9 +3348,107 @@ function restTag(user) {
   return user.card?.restUntil ? `<em class="rest-tag">ID карт ${shortDate(user.card.restUntil)} хүртэл түдгэлзсэн</em>` : "";
 }
 
-/** Today and the next 27 days, one row per user, with dated columns grouped by month. */
+/** The roster's periods: the next 28 days, each of the last three calendar months, and those three together. */
+function rosterPeriods(today) {
+  const [year, month] = today.split("-").map(Number);
+  const monthOf = (back) => {
+    const first = new Date(Date.UTC(year, month - 1 - back, 1)).toISOString().slice(0, 10);
+    const next = new Date(Date.UTC(year, month - back, 1)).toISOString().slice(0, 10);
+    return { from: first, to: addDays(next, -1), label: `${Number(first.slice(5, 7))}-р сар` };
+  };
+  const months = [0, 1, 2].map(monthOf);
+  return {
+    next: { from: today, to: addDays(today, ROSTER_DAYS - 1), label: "Ирэх 28 хоног" },
+    ...Object.fromEntries(months.map((item) => [item.from.slice(0, 7), item])),
+    three: { from: months[2].from, to: months[0].to, label: "Сүүлийн 3 сар" },
+  };
+}
+
+function rosterPeriod(today) {
+  const periods = rosterPeriods(today);
+  const key = periods[state.rosterPeriod] ? state.rosterPeriod : "next";
+  return { key, periods, ...periods[key] };
+}
+
+function rosterTabs(today) {
+  const { key, periods } = rosterPeriod(today);
+  return `<div class="roster-periods" role="tablist" aria-label="Хуваарийн хугацаа">${Object.entries(periods)
+    .map(([value, item]) => `<button class="chip${value === key ? " is-on" : ""}" type="button" role="tab" aria-selected="${value === key}" data-action="roster-period" data-period="${value}">${esc(item.label)}</button>`)
+    .join("")}</div>`;
+}
+
+/**
+ * One roster cell. Days up to today that attendance tracked show what happened on top of the plan;
+ * later days, and days before tracking began, show the plan alone.
+ */
+function rosterCell({ data, user, plan, sessions, date, today, now }) {
+  const day = `${shortDate(date)} ${WEEKDAY_SHORT[weekdayOf(date)]}`;
+  const leave = leaveOn(data.leaves, user.id, date);
+  const kind = plannedKind(plan, date);
+  const planned = leave ? LEAVE_LABEL[leave.type] : `${PLAN_LABEL[kind]} ${PLAN_HOURS[kind]}`.trim();
+  const base = { cls: leave ? "is-leave" : `is-${kind}`, letter: leave ? "Ч" : PLAN_LETTER[kind], title: `${day} · ${planned}`, text: leave ? LEAVE_LABEL[leave.type] : PLAN_LABEL[kind] };
+  const since = data.historyFrom || today;
+  if (date > today) return base;
+  if (date < since) return { ...base, title: `${base.title} · ирц бүртгэгдээгүй үе`, text: `${base.text} (бүртгэлгүй)` };
+  const record = dayRecord({ sessions, week: plan, leaves: data.leaves, uid: user.id, date, now });
+  const sinceAt = data.trackAt ? Date.parse(data.trackAt) : null;
+  if (record.status === "absent" && sinceAt && record.span.end <= sinceAt) return { ...base, title: `${base.title} · ирц бүртгэгдээгүй үе`, text: `${base.text} (бүртгэлгүй)` };
+  const times = record.firstIn ? ` · ирсэн ${clockLabel(record.firstIn)}${record.lastOut ? ` · гарсан ${clockLabel(record.lastOut)}` : ""}` : "";
+  const early = record.early ? ` · ${record.early} мин эрт гарсан` : "";
+  if (record.status === "extra") return { cls: "is-off st-extra", letter: "+", title: `${day} · амралтын өдөр ажилласан${times}`, text: `Амралт, ажилласан${times}` };
+  if (record.status === "ontime") return { ...base, cls: `${base.cls} ${record.live ? "st-live" : "st-ok"}${record.early ? " st-early" : ""}`, title: `${base.title}${record.live ? " · ажил дээр" : " · цагтаа"}${times}${early}`, text: `${base.text}, ${record.live ? "ажил дээр" : "цагтаа"}${times}${early}` };
+  if (record.status === "late") return { ...base, cls: `${base.cls} st-late`, title: `${base.title} · ${record.late} мин хоцорсон${times}${early}`, text: `${base.text}, ${record.late} мин хоцорсон${times}${early}` };
+  if (record.status === "absent") return { ...base, cls: `${base.cls} st-absent`, title: `${base.title} · ирээгүй`, text: `${base.text}, ирээгүй` };
+  if (record.status === "missing") return { ...base, cls: `${base.cls} st-missing`, title: `${base.title} · одоохондоо ирээгүй`, text: `${base.text}, одоохондоо ирээгүй` };
+  return base;
+}
+
+/** Cells and totals of every roster row for the picked period. */
+function rosterData(data, users, today, now = Date.now()) {
+  const period = rosterPeriod(today);
+  const dates = datesBetween(period.from, period.to);
+  const past = period.from <= today && period.key !== "next";
+  const end = period.to < today ? period.to : today;
+  const rows = users.map((user) => {
+    const plan = weekOf(data, user);
+    const sessions = sessionsOf(data.events || [], user.id, now);
+    const cells = dates.map((date) => ({ date, ...rosterCell({ data, user, plan, sessions, date, today, now }) }));
+    const sum = past
+      ? periodSummary({ sessions, week: plan, leaves: data.leaves, uid: user.id, from: period.from, to: end, now, since: data.historyFrom, sinceAt: data.trackAt ? Date.parse(data.trackAt) : null })
+      : null;
+    return { user, plan, cells, sum };
+  });
+  return { period, dates, past, rows };
+}
+
+function downloadRosterCsv() {
+  const data = state.admin?.attendance;
+  if (!data) return;
+  const today = localDate(new Date().toISOString());
+  const users = (state.admin.users || []).filter(worksShifts).filter((user) => planRowShown("roster", planRowInfo(data, user, today)));
+  const { period, dates, past, rows } = rosterData(data, users, today);
+  const header = ["Овог нэр", "Нэвтрэх нэр", "Албан тушаал", "Хуваарь", ...dates, ...(past ? ["Ажилласан өдөр", "Өдрийн ээлж", "Шөнийн ээлж", "Амралтын өдөр ажилласан", "Хоцорсон", "Эрт гарсан", "Тасалсан", "Чөлөө"] : [])];
+  const lines = rows.map(({ user, plan, cells, sum }) => [
+    user.displayName,
+    user.username,
+    user.title || "",
+    planSummary(plan, today),
+    ...cells.map((cell) => cell.text),
+    ...(past ? [sum.workedDays, sum.dayShifts, sum.nightShifts, sum.extra, sum.late, sum.early, sum.absent, sum.leave] : []),
+  ]);
+  const cell = (value) => `"${String(value).replace(/"/g, '""')}"`;
+  const csv = [header, ...lines].map((row) => row.map(cell).join(",")).join("\r\n");
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
+  link.download = `eeljiin-huvaari-${period.from}_${period.to}.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+/** The picked period, one row per user, with dated columns grouped by month and totals for past days. */
 function rosterTable(data, users, today) {
-  const dates = Array.from({ length: ROSTER_DAYS }, (_, index) => addDays(today, index));
+  const { dates, past, rows: rosterRows } = rosterData(data, users, today);
+  const span = dates.length + 1 + (past ? 3 : 0);
   const months = [];
   for (const date of dates) {
     const key = date.slice(0, 7);
@@ -3363,31 +3462,30 @@ function rosterTable(data, users, today) {
       return `<th class="roster-day${date === today ? " is-today" : ""}${weekday === 0 || weekday === 6 ? " is-weekend" : ""}"><b>${Number(date.slice(8))}</b><small>${WEEKDAY_SHORT[weekday]}</small></th>`;
     })
     .join("");
-  const rows = users
-    .map((user, index) => {
-      const plan = weekOf(data, user);
-      const cells = dates
-        .map((date) => {
-          const leave = leaveOn(data.leaves, user.id, date);
-          const kind = plannedKind(plan, date);
-          const label = leave ? LEAVE_LABEL[leave.type] : `${PLAN_LABEL[kind]} ${PLAN_HOURS[kind]}`.trim();
-          return `<td class="${leave ? "is-leave" : `is-${kind}`}${date === today ? " is-today" : ""}" title="${esc(`${shortDate(date)} ${WEEKDAY_SHORT[weekdayOf(date)]} · ${label}`)}">${leave ? "Ч" : PLAN_LETTER[kind]}</td>`;
-        })
-        .join("");
+  const rows = rosterRows
+    .map(({ user, plan, cells, sum }, index) => {
+      const tds = cells.map((cell) => `<td class="${cell.cls}${cell.date === today ? " is-today" : ""}" title="${esc(cell.title)}">${cell.letter}</td>`).join("");
+      const totals = sum
+        ? `<td class="roster-sum">${sum.workedDays}</td><td class="roster-sum${sum.late ? " is-warn" : ""}">${sum.late}</td><td class="roster-sum${sum.absent ? " is-bad" : ""}">${sum.absent}</td>`
+        : "";
       return `<tr class="row-in" style="--i:${Math.min(index, 14)}" ${planRowAttrs("roster", planRowInfo(data, user, today))}>
           <th class="roster-who">${avatar(user)}<div><b>${esc(user.displayName)}</b><small>${esc(planSummary(plan, today))}${selfMark(user)}</small>${restTag(user)}</div></th>
-          ${cells}
+          ${tds}${totals}
         </tr>`;
     })
-    .join("") + (users.length ? planEmptyRow("roster", data, users, today, ROSTER_DAYS + 1) : "");
+    .join("") + (users.length ? planEmptyRow("roster", data, users, today, span) : "");
+  const sumHead = past ? `<th rowspan="2" class="roster-sum">Ажилласан</th><th rowspan="2" class="roster-sum">Хоцорсон</th><th rowspan="2" class="roster-sum">Тасалсан</th>` : "";
+  const marks = past
+    ? `<span class="is-day st-ok">Ө</span>Цагтаа<span class="is-day st-late">Ө</span>Хоцорсон<span class="is-day st-absent">Ө</span>Ирээгүй<span class="is-off st-extra">+</span>Амралтын өдөр ажилласан`
+    : "";
   return `
       <div class="roster-scroll">
         <table class="roster">
-          <thead><tr><th rowspan="2" class="roster-who">Хэрэглэгч</th>${monthRow}</tr><tr>${dayRow}</tr></thead>
-          <tbody>${rows || `<tr><td colspan="${ROSTER_DAYS + 1}" class="muted">Хэрэглэгч алга.</td></tr>`}</tbody>
+          <thead><tr><th rowspan="2" class="roster-who">Хэрэглэгч</th>${monthRow}${sumHead}</tr><tr>${dayRow}</tr></thead>
+          <tbody>${rows || `<tr><td colspan="${span}" class="muted">Хэрэглэгч алга.</td></tr>`}</tbody>
         </table>
       </div>
-      <p class="roster-legend"><span class="is-day">Ө</span>Өдөр ${PLAN_HOURS.day}<span class="is-night">Ш</span>Шөнө ${PLAN_HOURS.night}<span class="is-off">А</span>Амралт · эргэлтийн амралтад ID карт түдгэлзэнэ<span class="is-leave">Ч</span>Чөлөө</p>`;
+      <p class="roster-legend"><span class="is-day">Ө</span>Өдөр ${PLAN_HOURS.day}<span class="is-night">Ш</span>Шөнө ${PLAN_HOURS.night}<span class="is-off">А</span>Амралт · эргэлтийн амралтад ID карт түдгэлзэнэ<span class="is-leave">Ч</span>Чөлөө${marks}</p>`;
 }
 
 function weekPicker(user, week) {
@@ -3492,10 +3590,11 @@ function planEmptyRow(block, data, users, today, span) {
   return `<tr class="plan-empty"${any ? " hidden" : ""}><td colspan="${span}" class="muted">Шүүлтэд тохирох ажилтан алга.</td></tr>`;
 }
 
-function planTools(block) {
+function planTools(block, extra = "") {
   return `<span class="tool-group fold-only">
       ${toolButton(`${block}-search`, "search", "Ажилтан хайх", planFilter(block).query.trim())}
       ${toolButton(`${block}-filter`, "filter", "Ажилтан шүүх", planFiltered(block))}
+      ${extra}
     </span>`;
 }
 
@@ -3691,10 +3790,10 @@ function planEditor(data) {
       <div class="fold-box${hrFold().roster ? " is-open" : ""}" data-fold-box="roster">
         <div class="admin-users-head">
           <h2>Ээлжийн хуваарь <small>Эргэлт: 7 өдөр → 7 шөнө → 14 амралт, шөнөөр эхэлбэл 7 шөнө → 7 өдөр → 14 амралт, хүний нөөц 14 өдөр → 14 амралт. Автоматаар давтагдана</small></h2>
-          <div class="tool-bar">${planTools("roster")}${foldButton("roster")}</div>
+          <div class="tool-bar">${planTools("roster", `<button class="icon-btn tool-btn" type="button" data-action="roster-csv" aria-label="Сонгосон хугацааны хуваарь татах (CSV)" title="Сонгосон хугацааны хуваарь татах (CSV)">${adminIcon("download")}</button>`)}${foldButton("roster")}</div>
         </div>
         <p class="plan-tally">Өнөөдөр: <span class="is-day">${PLAN_LABEL.day} ${tally.day}</span><span class="is-night">${PLAN_LABEL.night} ${tally.night}</span><span class="is-off">${PLAN_LABEL.off} ${tally.off}</span></p>
-        <div class="fold-body"><div class="fold-inner">${planToolRow("roster", data, users, today)}${rosterTable(data, users, today)}</div></div>
+        <div class="fold-body"><div class="fold-inner">${planToolRow("roster", data, users, today)}${rosterTabs(today)}${rosterTable(data, users, today)}</div></div>
       </div>
       ${planSettings(data, users, today)}
     </section>`;
@@ -5588,6 +5687,11 @@ stage.addEventListener("click", async (event) => {
   }
   if (action === "hr-fold") toggleFold(button);
   if (action === "tool-toggle") toggleTool(button);
+  if (action === "roster-period") {
+    state.rosterPeriod = button.dataset.period;
+    repaintPlans();
+  }
+  if (action === "roster-csv") downloadRosterCsv();
   if (action === "user-detail") toggleUserDetail(button.dataset.id);
   if (action === "users-expand-all") toggleAllUsers();
   if (action === "hist-toggle") {
