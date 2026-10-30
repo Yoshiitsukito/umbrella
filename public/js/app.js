@@ -2226,7 +2226,6 @@ function userProfileView() {
             <div><dt>Ангилал</dt><dd>${esc(card.classification)}</dd></div>
             <div><dt>Карт хүчинтэй</dt><dd>${esc(card.expires)}</dd></div>
           </dl>
-          <p class="muted profile-note">Нэр, албан тушаал, и-мэйл, зураг болон картын мэдээллийг зөвхөн админ өөрчилнө.</p>
         </section>
         ${appLinkPanel()}
         ${passwordForm()}

@@ -50,6 +50,7 @@ import { WX_MODES, renderWeatherTile } from "./lib/wxtiles.mjs";
 import { verifyToken } from "./lib/token.mjs";
 import { approveDevice, deviceList, deviceLogin, removeDevice, requestDevice } from "./lib/devices.mjs";
 import { ensureAttendance, presenceOf, recordScan, shiftWindows } from "./lib/attendance.mjs";
+import { seedDemo } from "./lib/demoseed.mjs";
 import { applyRestUpdate, cleanPlan, ensureWorkplan, patternsFor, restBlock, restUpdates, leaveRequest, noteAttempt, pruneLeaves } from "./lib/workplan.mjs";
 import { faceOf, faceProgress, frameBuffer, photoFace, warmFace } from "./lib/face.mjs";
 import { energyFromSleep, hydrationTarget } from "./lib/wellness.mjs";
@@ -2476,6 +2477,8 @@ update((db) => {
   ensureMenu(db);
   if (migrateSharedHealth(db)) console.log("Эрүүл мэндийн нийтийн өгөгдлийг хэрэглэгч бүрт тусгаарлалаа.");
   ensureWhiteKing(db);
+  const demo = HOSTED ? seedDemo(db) : null;
+  if (demo) console.log(`Туршилтын өгөгдөл: ${demo.users} шинэ хэрэглэгч, ${demo.staff} ажилтны ${demo.scans} ирцийн бүртгэл, ${demo.dishes} хоол.`);
 })
   .then(() => update((db) => ensureFresh(db, true)))
   .catch((error) => console.error(error.message))
