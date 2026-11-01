@@ -57,6 +57,7 @@ import {
   workload,
 } from "./wellstats.js";
 import { MENU_CATEGORIES, MENU_CATEGORY_LABEL, MENU_MEALS, MENU_MEAL_LABEL } from "./menulabels.js";
+import { MASTER_VIEWS, initMine, masterReset, masterStart, masterStop, masterView, workerPanel } from "./master.js";
 
 // Google Map Tiles API is not enabled on the project yet; set to true once it is.
 const TRAFFIC_ENABLED = false;
@@ -108,8 +109,8 @@ const state = {
   briefing: false,
 };
 
-const ROLE_LABEL = { admin: "Админ", hr: "Хүний нөөц", kitchen: "Гал тогоо", user: "Хэрэглэгч", whiteking: "White Queen" };
-const ROLES = ["user", "hr", "kitchen", "admin", "whiteking"];
+const ROLE_LABEL = { admin: "Админ", hr: "Хүний нөөц", kitchen: "Гал тогоо", user: "Хэрэглэгч", whiteking: "White Queen", master: "Уурхайн мастер" };
+const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master"];
 const STAFF_ROLES = ["user", "hr", "kitchen"];
 const ADMIN_VIEWS = ["users", "account", "card", "whiteking"];
 const HR_VIEWS = ["staff", "today"];
@@ -131,8 +132,13 @@ function isStation() {
   return state.me?.role === "whiteking";
 }
 
+function isMaster() {
+  return state.me?.role === "master";
+}
+
 function homeFor() {
   if (isStation()) return "station";
+  if (isMaster()) return "mine";
   return isAdmin() ? "users" : "home";
 }
 
@@ -140,9 +146,10 @@ function homeFor() {
 function viewAllowed(view) {
   if (view === "profile") return true;
   if (isAdmin()) return ADMIN_VIEWS.includes(view);
+  if (isMaster()) return MASTER_VIEWS.includes(view);
   if (isHr() && HR_VIEWS.includes(view)) return true;
   if (isKitchen() && KITCHEN_VIEWS.includes(view)) return true;
-  return ![...ADMIN_VIEWS, ...HR_VIEWS, ...KITCHEN_VIEWS, "station"].includes(view);
+  return ![...ADMIN_VIEWS, ...HR_VIEWS, ...KITCHEN_VIEWS, ...MASTER_VIEWS, "station"].includes(view);
 }
 
 /** Staff who work shifts: regular users, HR and the kitchen alike. */
@@ -679,6 +686,7 @@ function homeView() {
   return `
     <div class="today">
       ${todayNotices(live)}
+      ${workerPanel(live)}
       ${shiftCard(info, live)}
 
       <section class="today-hero panel">
@@ -2170,7 +2178,7 @@ function flipHint() {
 }
 
 function roleBadge(role) {
-  return `<span class="role-badge${role === "admin" ? " is-admin" : role === "whiteking" ? " is-wk" : role === "hr" ? " is-hr" : role === "kitchen" ? " is-kitchen" : ""}">${ROLE_LABEL[role] || role}</span>`;
+  return `<span class="role-badge${role === "admin" ? " is-admin" : role === "whiteking" ? " is-wk" : role === "hr" ? " is-hr" : role === "kitchen" ? " is-kitchen" : role === "master" ? " is-master" : ""}">${ROLE_LABEL[role] || role}</span>`;
 }
 
 function statusBadge(status) {
@@ -2635,7 +2643,7 @@ function adminUsersView() {
         .map(
           (user) => `<tr class="${userOpen().has(user.id) ? "is-open" : ""}" data-id="${esc(user.id)}" data-search="${esc(userSearchKey(user))}" data-level="${esc(user.card.clearance)}" data-status="${esc(user.card.status)}"${visible(user) ? "" : " hidden"}>
             <td><div class="who">${expandButton(user, userOpen().has(user.id))}${avatar(user)}<div><b>${esc(user.displayName)}</b><small><span class="code-tag" title="Нэвтрэх нэр">${esc(user.loginCode || "–")}</span> @${esc(user.username)}${user.id === me.id ? " · та" : ""}</small></div></div></td>
-            <td>${roleBadge(user.role)}</td>
+            <td><select class="inline-select role-select is-${esc(user.role)}" data-inline="role" data-id="${esc(user.id)}" aria-label="${esc(user.displayName)} · эрх">${options(ROLES, user.role, (value) => ROLE_LABEL[value])}</select></td>
             <td class="mono">${esc(user.card.idNumber)}</td>
             <td><select class="inline-select lv-select lv-${user.card.clearance}" data-inline="clearance" data-id="${esc(user.id)}" aria-label="${esc(user.displayName)} · зэрэглэл">${options([1, 2, 3, 4, 5], user.card.clearance, (value) => `Level ${value}`)}</select></td>
             <td><select class="inline-select status-select is-${user.card.status.toLowerCase()}" data-inline="status" data-id="${esc(user.id)}" aria-label="${esc(user.displayName)} · төлөв">${options(CARD_STATUSES, user.card.status)}</select></td>
@@ -4234,6 +4242,7 @@ const WK_SCAN_REASON = {
   bad: "QR буруу байна.",
   cooldown: "Саяхан бүртгэгдсэн. 1 минутын дараа дахин уншуулна уу.",
   rest: "Амралтын хугацаа. ID карт түдгэлзсэн байна.",
+  safety: "ХАБЭА-ын шаардлага хангаагүй тул карт хаагдсан.",
   ...FACE_REASON,
 };
 
@@ -5352,6 +5361,12 @@ function render() {
   stage.classList.toggle("is-quiet", state.view === state.renderedView);
   state.renderedView = state.view;
   renderChrome();
+  if (MASTER_VIEWS.includes(state.view)) {
+    stage.innerHTML = masterView(state.view);
+    masterStart();
+    return;
+  }
+  masterStop();
   if (state.view === "station") {
     stage.innerHTML = stationView();
     startStationCamera();
@@ -6367,6 +6382,7 @@ function showLogin(message = "") {
   clearInterval(state.meTimer);
   clearInterval(state.attTimer);
   disconnectWatch();
+  masterReset();
   wkVoice.queue.length = 0;
   closeModal(true);
   state.wk?.wakeLock?.release().catch(() => {});
@@ -6468,6 +6484,8 @@ function setupAppMenu() {
 setupAppMenu();
 
 if (location.pathname === "/queen" && "serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+
+initMine({ stage, state, api, render, openModal, closeModal, toast });
 
 async function boot() {
   let user;

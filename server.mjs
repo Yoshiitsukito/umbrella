@@ -24,6 +24,7 @@ import {
   ensureCardTemplates,
   findByCardQr,
   ensureLoginCodes,
+  ensureMasterUser,
   ensureStationUser,
   ensureUsers,
   hashPassword,
@@ -51,6 +52,36 @@ import { verifyToken } from "./lib/token.mjs";
 import { approveDevice, deviceList, deviceLogin, removeDevice, requestDevice } from "./lib/devices.mjs";
 import { ensureAttendance, presenceOf, recordScan, shiftWindows } from "./lib/attendance.mjs";
 import { seedDemo } from "./lib/demoseed.mjs";
+import {
+  ackTalk,
+  autoBeds,
+  cancelSos,
+  checkMuster,
+  createRecord,
+  deleteRecord,
+  endMuster,
+  ensureMine,
+  masterView,
+  mineDue,
+  mineHold,
+  mineTick,
+  okLone,
+  photoOf,
+  raiseSos,
+  reportHazard,
+  saveSettings,
+  setBed,
+  setVisitorSite,
+  setWxSim,
+  startLone,
+  startMuster,
+  stopLone,
+  updateRecord,
+  updateSos,
+  workerMine,
+} from "./lib/mine.mjs";
+import { seedMine } from "./lib/mineseed.mjs";
+import { COLLECTIONS, payrollRows } from "./public/js/minecore.js";
 import { applyRestUpdate, cleanPlan, ensureWorkplan, patternsFor, restBlock, restUpdates, leaveRequest, noteAttempt, pruneLeaves } from "./lib/workplan.mjs";
 import { faceOf, faceProgress, frameBuffer, photoFace, warmFace } from "./lib/face.mjs";
 import { energyFromSleep, hydrationTarget } from "./lib/wellness.mjs";
@@ -726,6 +757,7 @@ function view(db, uid = db.profile.id) {
     messages: db.messages.slice(-20),
     providers: providers(),
     clock: localParts(),
+    mine: workerMine(db, uid),
   };
 }
 
@@ -1054,7 +1086,7 @@ async function routeAuth(req, res, url) {
   json(res, 404, { error: "Олдсонгүй" });
 }
 
-const NOTICE_TITLE = { plan: "Ээлжийн хуваарь", leave: "Чөлөөний хүсэлт", card: "ID карт" };
+const NOTICE_TITLE = { plan: "Ээлжийн хуваарь", leave: "Чөлөөний хүсэлт", card: "ID карт", hse: "ХАБЭА" };
 
 /** What the phone app's background service needs: sleep-button times, today's steps and new messages. */
 function mobileState(db, uid, now = Date.now()) {
@@ -1534,6 +1566,13 @@ function resting(person) {
   return { ok: false, reason: "rest", person, error: `Амралтын хугацаа. ID карт ${dotDate(person.card.restUntil)} хүртэл түдгэлзсэн.` };
 }
 
+/** A refusal for clocking in while a mine safety rule holds the card (expired licence, exam, breath test), or null. */
+function safetyHold(db, person) {
+  if (!person || presenceOf(db.attendance, person.id).state === "in") return null;
+  const reasons = mineHold(db, person);
+  return reasons ? { ok: false, reason: "safety", person, error: `ХАБЭА-ын хориг: ${reasons.join("; ")}.` } : null;
+}
+
 /** Checks a scanned QR (and burns one-time phone tokens) without recording attendance yet. */
 function resolveScan(db, body, { card = false } = {}) {
   if (String(body.token || "").startsWith(CARD_QR_PREFIX)) {
@@ -1541,6 +1580,7 @@ function resolveScan(db, body, { card = false } = {}) {
     const person = findByCardQr(db.users, body.token);
     if (resting(person)) return resting(person);
     if (!canScan(person)) return { ok: false, reason: "unknown" };
+    if (safetyHold(db, person)) return safetyHold(db, person);
     if (coolingDown(db, person.id)) return { ok: false, reason: "cooldown", person };
     return { ok: true, person, card: true, place: db.location };
   }
@@ -1549,6 +1589,7 @@ function resolveScan(db, body, { card = false } = {}) {
   const person = db.users.find((item) => item.id === check.payload.uid);
   if (resting(person)) return resting(person);
   if (!canScan(person)) return { ok: false, reason: "unknown" };
+  if (safetyHold(db, person)) return safetyHold(db, person);
   if (db.attendance.usedJti.includes(check.payload.jti)) return { ok: false, reason: "replay" };
   db.attendance.usedJti.push(check.payload.jti);
   db.attendance.usedJti = db.attendance.usedJti.slice(-400);
@@ -1634,6 +1675,7 @@ function finishScan(db, check) {
   const person = db.users.find((item) => item.id === check.uid);
   if (resting(person)) return resting(person);
   if (!canScan(person)) return { ok: false, reason: "unknown" };
+  if (safetyHold(db, person)) return safetyHold(db, person);
   if (check.card && coolingDown(db, person.id)) return { ok: false, reason: "cooldown", person };
   return { ok: true, reason: recordScan(db.attendance, person.id, check.place), person };
 }
@@ -1803,6 +1845,7 @@ async function routeWhiteKing(req, res, url, me) {
     const body = await readBody(req);
     const scan = await update((db) => {
       const result = resolveScan(db, body, { card: true });
+      if (result.reason === "safety") addLog(db.whiteking, "face", `${result.person.displayName}: ${result.error}`);
       if (!result.ok) return { ok: false, reason: result.reason, ...(result.error ? { error: result.error } : {}), ...(result.person ? { name: result.person.displayName } : {}), scans: todayScans(db) };
       return result;
     });
@@ -1937,6 +1980,140 @@ async function routeAdminWhiteKing(req, res, url, me) {
 
 const STATION_PATHS = [/^\/api\/whiteking\//, /^\/api\/tts$/, /^\/api\/me(\/|$)/];
 
+const MASTER_ACTIONS = [
+  [/^\/api\/master\/talks\/([\w-]+)\/ack$/, (db, body, me, now, m) => ackTalk(db, m[1], { uid: body.uid, qr: body.qr, via: body.qr ? "qr" : "master", now })],
+  [/^\/api\/master\/muster\/start$/, (db, body, me, now) => startMuster(db, { reason: body.reason, announceIt: body.announce !== false, by: me.id, now })],
+  [/^\/api\/master\/muster\/check$/, (db, body, me, now) => checkMuster(db, { uid: body.uid, visitor: body.visitor, qr: body.qr, via: body.qr ? "qr" : "master", now })],
+  [/^\/api\/master\/muster\/end$/, (db, body, me, now) => endMuster(db, me.id, now)],
+  [/^\/api\/master\/sos\/([\w-]+)$/, (db, body, me, now, m) => updateSos(db, m[1], body.status, me.id, now)],
+  [/^\/api\/master\/visitors\/([\w-]+)\/site$/, (db, body, me, now, m) => setVisitorSite(db, m[1], body.on, now)],
+  [/^\/api\/master\/camp\/auto$/, (db, body, me, now) => autoBeds(db, now)],
+  [/^\/api\/master\/camp\/bed$/, (db, body) => setBed(db, body.room, body.index, body.uid || null)],
+  [/^\/api\/master\/settings$/, (db, body) => saveSettings(db, body)],
+  [/^\/api\/master\/wx-sim$/, (db, body, me, now) => setWxSim(db, body, now)],
+];
+
+async function routeMaster(req, res, url, me) {
+  const now = Date.now();
+  const { pathname } = url;
+  const reply = (result) => json(res, result.error ? result.status || 400 : 200, result);
+  if (req.method === "GET" && pathname === "/api/master") {
+    json(res, 200, await inspect((db) => masterView(db, now)));
+    return;
+  }
+  const photo = pathname.match(/^\/api\/master\/photo\/([\w-]+)$/);
+  if (req.method === "GET" && photo) {
+    const data = (await inspect((db) => photoOf(db, photo[1])))?.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+    if (!data) {
+      json(res, 404, { error: "Зураг олдсонгүй" });
+      return;
+    }
+    res.writeHead(200, { "Content-Type": data[1], "Cache-Control": "private, max-age=3600" });
+    res.end(Buffer.from(data[2], "base64"));
+    return;
+  }
+  if (req.method === "GET" && pathname === "/api/master/payroll") {
+    const month = url.searchParams.get("month") || localParts().date.slice(0, 7);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      json(res, 400, { error: "Сар буруу" });
+      return;
+    }
+    const rows = await inspect((db) =>
+      payrollRows({
+        users: db.users.filter((user) => STAFF_ROLES.includes(user.role)),
+        events: db.attendance.events,
+        plans: db.shiftPlans,
+        leaves: db.leaves || [],
+        month,
+        now,
+        since: db.attendance.historyFrom || null,
+        sinceAt: db.attendance.resetAt ? Date.parse(db.attendance.resetAt) : null,
+      }),
+    );
+    json(res, 200, { month, rows });
+    return;
+  }
+  const record = pathname.match(/^\/api\/master\/c\/(\w+)(?:\/([\w-]+))?$/);
+  if (record && Object.hasOwn(COLLECTIONS, record[1])) {
+    const [, name, id] = record;
+    const body = req.method === "POST" || req.method === "PUT" ? await readBody(req, 700_000) : {};
+    const result = await update((db) => {
+      ensureMine(db);
+      let outcome;
+      if (req.method === "POST" && !id) outcome = createRecord(db, name, body, { by: me.id, now });
+      else if (req.method === "PUT" && id) outcome = updateRecord(db, name, id, body, { by: me.id, now });
+      else if (req.method === "DELETE" && id) outcome = deleteRecord(db, name, id);
+      else outcome = { error: "Буруу хүсэлт", status: 405 };
+      if (outcome.error) return outcome;
+      if (mineDue(db, now)) mineTick(db, now);
+      return { item: outcome.item, view: masterView(db, now) };
+    });
+    reply(result);
+    return;
+  }
+  if (req.method === "POST") {
+    for (const [pattern, action] of MASTER_ACTIONS) {
+      const match = pathname.match(pattern);
+      if (!match) continue;
+      const body = await readBody(req);
+      const result = await update((db) => {
+        ensureMine(db);
+        const outcome = action(db, body, me, now, match);
+        if (outcome.error) return outcome;
+        if (mineDue(db, now)) mineTick(db, now);
+        return { ...outcome, view: masterView(db, now) };
+      });
+      reply(result);
+      return;
+    }
+  }
+  json(res, 404, { error: "Олдсонгүй" });
+}
+
+const MINE_ACTIONS = [
+  [/^\/api\/mine\/sos$/, (db, body, me, now) => raiseSos(db, me.id, { lat: body.lat, lng: body.lng, note: body.note, now })],
+  [/^\/api\/mine\/sos\/cancel$/, (db, body, me, now) => cancelSos(db, me.id, now)],
+  [/^\/api\/mine\/talks\/([\w-]+)\/ack$/, (db, body, me, now, m) => ackTalk(db, m[1], { uid: me.id, via: "app", now })],
+  [/^\/api\/mine\/lone\/start$/, (db, body, me, now) => startLone(db, me.id, { minutes: body.minutes, place: body.place, now })],
+  [/^\/api\/mine\/lone\/ok$/, (db, body, me, now) => okLone(db, me.id, now)],
+  [/^\/api\/mine\/lone\/stop$/, (db, body, me, now) => stopLone(db, me.id, now)],
+  [/^\/api\/mine\/muster\/here$/, (db, body, me, now) => checkMuster(db, { uid: me.id, via: "app", now })],
+  [/^\/api\/mine\/hazard$/, (db, body, me, now) => reportHazard(db, me.id, body, now)],
+];
+
+/** A shift worker's safety actions; each answers with the worker's refreshed live view. */
+async function routeMine(req, res, url, me) {
+  const now = Date.now();
+  for (const [pattern, action] of MINE_ACTIONS) {
+    const match = url.pathname.match(pattern);
+    if (req.method !== "POST" || !match) continue;
+    const body = await readBody(req, 700_000);
+    const result = await update((db) => {
+      ensureMine(db);
+      const outcome = action(db, body, me, now, match);
+      return outcome.error ? outcome : view(db, me.id);
+    });
+    json(res, result.error ? result.status || 400 : 200, result);
+    return;
+  }
+  json(res, 404, { error: "Олдсонгүй" });
+}
+
+let mineBusy = false;
+
+async function mineTimer() {
+  if (mineBusy) return;
+  mineBusy = true;
+  try {
+    const now = Date.now();
+    if (await inspect((db) => mineDue(db, now))) await update((db) => mineTick(db, now));
+  } catch (error) {
+    console.error(`Уурхайн хяналт: ${error.message}`);
+  } finally {
+    mineBusy = false;
+  }
+}
+
 async function routeApi(req, res, url) {
   if (url.pathname.startsWith("/api/auth/")) {
     await routeAuth(req, res, url);
@@ -1997,6 +2174,22 @@ async function routeApi(req, res, url) {
       }
       if (url.pathname === "/api/admin/whiteking" || url.pathname.startsWith("/api/admin/whiteking/")) await routeAdminWhiteKing(req, res, url, me);
       else await routeAdmin(req, res, url, me);
+      return;
+    }
+    if (url.pathname === "/api/master" || url.pathname.startsWith("/api/master/")) {
+      if (me.role !== "master") {
+        json(res, 403, { error: "Зөвхөн уурхайн мастерт зориулсан" });
+        return;
+      }
+      await routeMaster(req, res, url, me);
+      return;
+    }
+    if (url.pathname.startsWith("/api/mine/")) {
+      if (!STAFF_ROLES.includes(me.role)) {
+        json(res, 403, { error: "Зөвхөн ээлжийн ажилтанд зориулсан" });
+        return;
+      }
+      await routeMine(req, res, url, me);
       return;
     }
   }
@@ -2477,6 +2670,8 @@ update((db) => {
   if (keyed) console.log(`ID картын ирцийн QR үүслээ: ${keyed} хэрэглэгч`);
   const station = ensureStationUser(db);
   if (station) console.log(`White Queen станцын эрх үүслээ: ${station.code} / ${station.password}`);
+  const master = ensureMasterUser(db);
+  if (master) console.log(`Уурхайн мастерын эрх үүслээ: ${master.code} (@${master.username}) / ${process.env.MASTER_PASSWORD ? "MASTER_PASSWORD" : master.password}`);
   ensureAttendance(db);
   ensureWorkplan(db);
   ensureMenu(db);
@@ -2484,15 +2679,20 @@ update((db) => {
   ensureWhiteKing(db);
   const demo = HOSTED ? seedDemo(db) : null;
   if (demo) console.log(`Туршилтын өгөгдөл: ${demo.users} шинэ хэрэглэгч, ${demo.staff} ажилтны ${demo.scans} ирцийн бүртгэл, ${demo.dishes} хоол.`);
+  ensureMine(db);
+  const mine = seedMine(db);
+  if (mine) console.log(`Уурхайн туршилтын өгөгдөл: ${mine.records} бүртгэл${mine.errors.length ? ` · алгассан: ${mine.errors.slice(0, 3).join("; ")}` : ""}`);
 })
   .then(() => update((db) => ensureFresh(db, true)))
   .catch((error) => console.error(error.message))
   .finally(() => {
     whitekingTick();
     restTick();
+    mineTimer();
   });
 setInterval(whitekingTick, 10 * 1000);
 setInterval(restTick, 60 * 1000);
+setInterval(mineTimer, 10 * 1000);
 
 if (HOSTED && !firebaseConfigured()) {
   console.error("FIREBASE_SERVICE_ACCOUNT тохируулаагүй байна. Интернэт сервер анхны нууц үгтэй хоосон өгөгдлөөр асахгүй.");
