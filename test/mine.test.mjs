@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CARD_QR_PREFIX, ensureMasterUser, newUser } from "../lib/auth.mjs";
+import { CARD_QR_PREFIX, newUser } from "../lib/auth.mjs";
 import { personalKey } from "../lib/personal.mjs";
 import { ensureWhiteKing } from "../lib/whiteking.mjs";
 import {
@@ -40,6 +40,7 @@ function baseDb() {
   users.push(newUser({ id: "usr_a", username: "bold", password: "x", role: "user", displayName: "Болд", existing: users }));
   users.push(newUser({ id: "usr_b", username: "saraa", password: "x", role: "user", displayName: "Сараа", existing: users }));
   users.push(newUser({ id: "usr_hr", username: "hr", password: "x", role: "hr", existing: users }));
+  users.push(newUser({ id: "usr_master", username: "master", password: "x", role: "master", displayName: "Уурхайн мастер", existing: users }));
   const db = {
     users,
     shiftPlans: {},
@@ -47,7 +48,6 @@ function baseDb() {
     attendance: { events: [], usedJti: [], people: { usr_a: { state: "in", since: new Date(NOW - 2 * H).toISOString() } }, historyFrom: "2026-10-01" },
     weather: null,
   };
-  ensureMasterUser(db);
   ensureWhiteKing(db);
   ensureMine(db);
   return db;
@@ -59,21 +59,6 @@ const fit = (db, uid) => {
   add(db, "certs", { uid, type: "hse", expires: addDays(TODAY, 200) });
   add(db, "medicals", { uid, kind: "periodic", date: addDays(TODAY, -30), result: "fit", next: addDays(TODAY, 300) });
 };
-
-test("the first master account is made once and then left to the admin", () => {
-  const db = baseDb();
-  const first = master(db);
-  assert.equal(first.loginCode, "MST1");
-  assert.ok(db.masterSeed);
-  db.users = db.users.filter((user) => user.id !== first.id);
-  assert.equal(ensureMasterUser(db), null, "a master deleted by the admin stays deleted");
-  assert.equal(db.users.some((user) => user.role === "master"), false);
-
-  const older = { users: [newUser({ username: "boss", password: "x", role: "master", existing: [] })] };
-  assert.equal(ensureMasterUser(older), null, "a database that already has a master is only marked");
-  older.users[0].role = "user";
-  assert.equal(ensureMasterUser(older), null, "re-roling that master does not bring a new one back");
-});
 
 test("records are checked against the schema", () => {
   const ctx = { user: (uid) => uid === "usr_a", ref: () => false, others: [{ id: "x", code: "EX-01" }] };

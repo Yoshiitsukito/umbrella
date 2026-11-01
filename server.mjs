@@ -24,7 +24,6 @@ import {
   ensureCardTemplates,
   findByCardQr,
   ensureLoginCodes,
-  ensureMasterUser,
   ensureStationUser,
   ensureUsers,
   hashPassword,
@@ -2670,8 +2669,6 @@ update((db) => {
   if (keyed) console.log(`ID картын ирцийн QR үүслээ: ${keyed} хэрэглэгч`);
   const station = ensureStationUser(db);
   if (station) console.log(`White Queen станцын эрх үүслээ: ${station.code} / ${station.password}`);
-  const master = ensureMasterUser(db);
-  if (master) console.log(`Уурхайн мастерын эрх үүслээ: ${master.code} (@${master.username}) / ${process.env.MASTER_PASSWORD ? "MASTER_PASSWORD" : master.password}`);
   ensureAttendance(db);
   ensureWorkplan(db);
   ensureMenu(db);

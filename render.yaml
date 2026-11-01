@@ -14,8 +14,6 @@ services:
         value: "24"
       - key: FIREBASE_SERVICE_ACCOUNT
         sync: false
-      - key: MASTER_PASSWORD
-        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY

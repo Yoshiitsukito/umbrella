@@ -48,50 +48,82 @@ export const MASTER_VIEWS = ["mine", "hse", "skills", "ops", "camp"];
 
 const TABS = {
   hse: [
-    ["incidents", "Осол, аюул"],
-    ["capa", "CAPA"],
-    ["talks", "Зааварчилгаа"],
-    ["permits", "Зөвшөөрөл"],
-    ["risks", "Эрсдэл"],
-    ["jsas", "JSA"],
-    ["alcohol", "Согтуурал"],
-    ["ppe", "ХХХ"],
-    ["blasts", "Тэсэлгээ"],
-    ["weather", "Цаг агаар"],
-    ["emergency", "SOS, цуглаан"],
+    ["incidents", "Осол, аюул", "alert"],
+    ["capa", "CAPA", "clipboard"],
+    ["talks", "Зааварчилгаа", "megaphone"],
+    ["permits", "Зөвшөөрөл", "permit"],
+    ["risks", "Эрсдэл", "gauge"],
+    ["jsas", "JSA", "steps"],
+    ["alcohol", "Согтуурал", "flask"],
+    ["ppe", "ХХХ", "vest"],
+    ["blasts", "Тэсэлгээ", "blast"],
+    ["weather", "Цаг агаар", "cloud"],
+    ["emergency", "SOS, цуглаан", "siren"],
   ],
   skills: [
-    ["people", "Картын хориг"],
-    ["certs", "Гэрчилгээ"],
-    ["medicals", "Эрүүл мэнд"],
-    ["visitors", "Түр нэвтрэх"],
+    ["people", "Картын хориг", "lock"],
+    ["certs", "Гэрчилгээ", "award"],
+    ["medicals", "Эрүүл мэнд", "heart"],
+    ["visitors", "Түр нэвтрэх", "visitor"],
   ],
   ops: [
-    ["board", "Самбар"],
-    ["equipment", "Техник"],
-    ["assigns", "Хуваарилалт"],
-    ["prestarts", "Pre-start"],
-    ["workorders", "Засвар"],
-    ["fuel", "Түлш"],
-    ["stock", "Агуулах"],
-    ["moves", "Орлого, зарлага"],
-    ["handovers", "Ээлж хүлээлцэх"],
-    ["org", "Бүтэц"],
+    ["board", "Самбар", "grid"],
+    ["equipment", "Техник", "truck"],
+    ["assigns", "Хуваарилалт", "assign"],
+    ["prestarts", "Pre-start", "checklist"],
+    ["workorders", "Засвар", "wrench"],
+    ["fuel", "Түлш", "fuel"],
+    ["stock", "Агуулах", "box"],
+    ["moves", "Орлого, зарлага", "swap"],
+    ["handovers", "Ээлж хүлээлцэх", "repeat"],
+    ["org", "Бүтэц", "sitemap"],
   ],
   camp: [
-    ["rooms", "Өрөө"],
-    ["transport", "Ээлжийн тээвэр"],
-    ["payroll", "Цалингийн тайлан"],
-    ["contractors", "Гэрээт"],
+    ["rooms", "Өрөө", "bed"],
+    ["transport", "Ээлжийн тээвэр", "bus"],
+    ["payroll", "Цалингийн тайлан", "wallet"],
+    ["contractors", "Гэрээт", "briefcase"],
   ],
 };
 
 const PAGES = {
-  mine: ["Уурхайн самбар", "Онцгой байдал, үйлдвэрлэл, техник, хүмүүсийн байдал нэг дор.", "mine"],
-  hse: ["ХАБЭА · аюулгүй ажиллагаа", "Осол, зөвшөөрөл, зааварчилгаа, тэсэлгээ, цаг агаарын босго, SOS.", "helmet"],
-  skills: ["Ур чадвар, эрүүл мэнд", "Гэрчилгээ, үзлэг, картын автомат хориг, түр нэвтрэх эрх.", "badge"],
-  ops: ["Үйлдвэрлэл, техник", "Техник, оператор, засвар, түлш, агуулах, ээлжийн тайлан.", "truck"],
-  camp: ["Кэмп, логистик", "Өрөө, ээлжийн тээвэр, цалингийн тайлан, гэрээт гүйцэтгэгч.", "camp"],
+  mine: ["Уурхайн самбар", "mine"],
+  hse: ["ХАБЭА", "helmet"],
+  skills: ["Ур чадвар, эрүүл мэнд", "badge"],
+  ops: ["Үйлдвэрлэл, техник", "truck"],
+  camp: ["Кэмп, логистик", "camp"],
+};
+
+const COL_ICON = {
+  ...Object.fromEntries(Object.values(TABS).flat().map(([key, , icon]) => [key, icon])),
+  wxRules: "sliders",
+  depts: "sitemap",
+  crews: "people",
+  posts: "badge",
+};
+
+/** The one select field each table can be narrowed by, as chips; `get` reads a derived value instead. */
+const FILTERS = {
+  incidents: { key: "status" },
+  capa: { key: "status" },
+  talks: { key: "shift" },
+  permits: { key: "status", get: (item) => permitState(item, Date.parse(m.data.now)), labels: () => PERMIT_STATUS },
+  risks: { key: "status" },
+  ppe: { key: "item" },
+  blasts: { key: "status" },
+  certs: { key: "expires", get: (item) => expiryState(item.expires, m.data.today).state, labels: () => ({ expired: "Дууссан", soon: "Дуусах дөхсөн", valid: "Хүчинтэй" }) },
+  medicals: { key: "result" },
+  visitors: { key: "kind" },
+  equipment: { key: "status" },
+  assigns: { key: "shift" },
+  workorders: { key: "status" },
+  fuel: { key: "equipment", get: (item) => recordOf("equipment", item.equipment)?.type || "", labels: () => EQUIP_TYPES },
+  stock: { key: "category" },
+  moves: { key: "kind" },
+  handovers: { key: "shift" },
+  posts: { key: "position" },
+  transport: { key: "dir" },
+  contractors: { key: "status" },
 };
 
 const ICON = {
@@ -119,6 +151,44 @@ const ICON = {
   camp: `<path d="M3 20.5 12 4l9 16.5z"/><path d="M12 20.5 9 14.5h6z"/>`,
   refresh: `<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/>`,
   print: `<path d="M7 9V4h10v5M7 17H4.5v-7h15v7H17"/><rect x="7" y="14" width="10" height="6"/>`,
+  alert: `<path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4.5M12 17.2v.1"/>`,
+  clipboard: `<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V3h6v1.5M8.5 12.5l2.3 2.3 4.7-4.6"/>`,
+  megaphone: `<path d="M3.5 10v4h3l7 4.5v-13l-7 4.5z"/><path d="M17 9a4 4 0 0 1 0 6M6.5 14l1.5 5.5h2.5L9.5 14"/>`,
+  permit: `<path d="M14 3.5H6.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V9z"/><path d="M14 3.5V9h5.5M8 13h8M8 16.5h5"/>`,
+  gauge: `<path d="M3.5 17a8.5 8.5 0 1 1 17 0"/><path d="m12 17 4-5.5"/><circle cx="12" cy="17" r="1.3"/>`,
+  steps: `<path d="m3.5 6 1.5 1.5L8 4.5M3.5 12.5 5 14l3-3M3.5 19 5 20.5l3-3M11 6h9.5M11 12.5h9.5M11 19h9.5"/>`,
+  flask: `<path d="M9.5 3.5h5M10.5 3.5v5.5L5 19a1.5 1.5 0 0 0 1.3 2.2h11.4A1.5 1.5 0 0 0 19 19l-5.5-10V3.5"/><path d="M7.5 15h9"/>`,
+  vest: `<path d="M8 3.5 4.5 6v14.5h6V13l1.5-2 1.5 2v7.5h6V6L16 3.5l-4 5z"/>`,
+  blast: `<path d="m12 2.5 1.8 5 5-2-2.6 4.7 5 1.8-5 1.8 2.6 4.7-5-2-1.8 5-1.8-5-5 2 2.6-4.7-5-1.8 5-1.8-2.6-4.7 5 2z"/>`,
+  cloud: `<path d="M7 18.5h10.5a4 4 0 0 0 .4-8A6 6 0 0 0 6.4 9.3 4.6 4.6 0 0 0 7 18.5z"/>`,
+  siren: `<path d="M6 18.5v-6a6 6 0 0 1 12 0v6"/><path d="M4 18.5h16v2H4zM12 3v2M4.2 6.2l1.4 1.4M19.8 6.2l-1.4 1.4M12 11v4"/>`,
+  lock: `<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5M12 14.5v2.5"/>`,
+  award: `<circle cx="12" cy="9" r="5.5"/><path d="M8.5 13.5 7 21l5-2.5 5 2.5-1.5-7.5"/>`,
+  heart: `<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20z"/><path d="M4.5 12.5h4l1.5-2.5 2.5 5 1.5-2.5h5.5"/>`,
+  visitor: `<circle cx="10" cy="8" r="3.5"/><path d="M3.5 20a6.5 6.5 0 0 1 11-4.7"/><rect x="15" y="14" width="6.5" height="6.5" rx="1"/>`,
+  grid: `<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>`,
+  assign: `<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 11.5h5.5M19 9l2.5 2.5L19 14"/>`,
+  checklist: `<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V3h6v1.5M8.5 10h7M8.5 13.5h7M8.5 17h4"/>`,
+  fuel: `<path d="M4.5 20.5V5a1.5 1.5 0 0 1 1.5-1.5h6A1.5 1.5 0 0 1 13.5 5v15.5M3 20.5h12M4.5 10h9"/><path d="M13.5 8.5h2a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 0 3 0V8l-2.5-2.5"/>`,
+  box: `<path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/>`,
+  swap: `<path d="M4 8h14M14.5 4.5 18 8l-3.5 3.5M20 16H6M9.5 12.5 6 16l3.5 3.5"/>`,
+  repeat: `<path d="M4 12a8 8 0 0 1 13.7-5.7L20 8.5M20 4v4.5h-4.5M20 12a8 8 0 0 1-13.7 5.7L4 15.5M4 20v-4.5h4.5"/>`,
+  sitemap: `<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-4h12v4"/>`,
+  bus: `<rect x="4" y="3.5" width="16" height="14" rx="2.5"/><path d="M4 11h16M8 17.5v2.5M16 17.5v2.5"/><circle cx="8" cy="14.3" r="1"/><circle cx="16" cy="14.3" r="1"/>`,
+  wallet: `<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 10h18M16 15h2M6 6l9-2.5 1 2.5"/>`,
+  briefcase: `<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5v2M3 12.5h18"/>`,
+  sliders: `<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>`,
+  chart: `<path d="M4 20.5h16M6.5 17v-6M11 17V6M15.5 17V9M20 17v-4"/>`,
+  search: `<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>`,
+  chevron: `<path d="m6 9 6 6 6-6"/>`,
+  fold: `<path d="M8 3.5l4 4 4-4M8 20.5l4-4 4 4M4.5 12h15"/>`,
+  unfold: `<path d="M12 3.5v17M8 7.5l4-4 4 4M8 16.5l4 4 4-4"/>`,
+  clock: `<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>`,
+  calendar: `<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>`,
+  user: `<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>`,
+  cog: `<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>`,
+  shield: `<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/>`,
+  moon: `<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>`,
 };
 
 let ctx = null;
@@ -126,18 +196,21 @@ const m = {
   data: null,
   timer: 0,
   loading: false,
-  tab: readTabs(),
+  tab: readStored("mine-tabs", {}),
+  fold: new Set(readStored("mine-fold", [])),
+  open: new Set(),
   query: {},
+  filter: {},
   seenSos: new Set(),
   payroll: null,
   payMonth: null,
 };
 
-function readTabs() {
+function readStored(key, fallback) {
   try {
-    return JSON.parse(localStorage.getItem("mine-tabs") || "{}");
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
   } catch {
-    return {};
+    return fallback;
   }
 }
 
@@ -212,7 +285,8 @@ export function masterStop() {
 
 export function masterReset() {
   masterStop();
-  Object.assign(m, { data: null, payroll: null, payMonth: null, query: {} });
+  Object.assign(m, { data: null, payroll: null, payMonth: null, query: {}, filter: {} });
+  m.open.clear();
   m.seenSos.clear();
 }
 
@@ -302,15 +376,37 @@ export function masterView(view) {
 }
 
 function hero(view) {
-  const [title, sub, icon] = PAGES[view];
-  const stat = (value, label, tone = "") => `<div class="${tone ? `is-${tone}` : ""}"><b>${value}</b><span>${label}</span></div>`;
+  const [title, icon] = PAGES[view];
+  const stat = (value, label, tone = "") => `<div class="m-stat${tone ? ` is-${tone}` : ""}"><b>${value}</b><span>${label}</span></div>`;
   return `
-    <section class="panel admin-hero m-hero">
-      <div class="admin-shield">${ico(icon)}</div>
-      <div class="profile-who"><b>${esc(title)}</b><span>${esc(sub)} ${m.data.today ? `· ${fmtDate(m.data.today)} · ${SHIFTS[m.data.shift]} ээлж` : ""}</span></div>
-      <div class="admin-stats">${heroStats(view).map(([value, label, tone]) => stat(value, label, tone)).join("")}</div>
+    <section class="panel m-hero">
+      <div class="m-hero-top">
+        <div class="admin-shield">${ico(icon)}</div>
+        <h1>${esc(title)}</h1>
+        <span class="m-pill">${ico("calendar")}${fmtDate(m.data.today)}</span>
+        <span class="m-pill">${ico("clock")}${SHIFTS[m.data.shift]} ээлж</span>
+        <button class="icon-btn m-foldall" type="button" data-m="fold-all" title="Бүгдийг хураах / дэлгэх" aria-label="Бүгдийг хураах / дэлгэх">${ico("fold")}</button>
+      </div>
+      <div class="m-stats">${heroStats(view).map(([value, label, tone]) => stat(value, label, tone)).join("")}</div>
     </section>`;
 }
+
+/** A section that folds to its header; the folded ones are remembered across visits. */
+function panel({ key, icon, title, count, tools = "", body, cls = "" }) {
+  const folded = m.fold.has(key);
+  return `<section class="panel m-panel${folded ? " is-folded" : ""}${cls ? ` ${cls}` : ""}" data-fold-key="${esc(key)}">
+    <header class="m-panel-head">
+      <button type="button" class="m-fold" data-m="fold" aria-expanded="${!folded}">
+        <span class="m-head-ico">${ico(icon)}</span><h2>${esc(title)}</h2>${count != null ? `<span class="m-count">${count}</span>` : ""}${ico("chevron", "m-ico m-chev")}
+      </button>
+      ${tools ? `<div class="m-tools">${tools}</div>` : ""}
+    </header>
+    <div class="m-panel-body">${body}</div>
+  </section>`;
+}
+
+const toolBtn = (action, icon, title, extra = "") => `<button class="icon-btn" type="button" data-m="${action}" title="${esc(title)}" aria-label="${esc(title)}"${extra}>${ico(icon)}</button>`;
+const addBtn = (name, preset) => `<button class="primary m-add" type="button" data-m="new" data-name="${name}"${preset ? ` data-preset='${esc(JSON.stringify(preset))}'` : ""} title="Нэмэх" aria-label="Нэмэх">${ico("add")}<span>Нэмэх</span></button>`;
 
 function heroStats(view) {
   const d = m.data;
@@ -372,11 +468,38 @@ function alertStrip() {
   return items.length ? `<div class="m-alerts">${items.join("")}</div>` : "";
 }
 
+/** How many things on a tab need the master's attention, shown as a red count on the tab. */
+function tabAlert(tab) {
+  const d = m.data;
+  const now = Date.parse(d.now);
+  const count = {
+    incidents: () => d.hse.incidents.filter((item) => item.status === "open").length,
+    capa: () => d.hse.capa.filter((item) => item.status !== "done" && item.due && item.due < d.today).length,
+    permits: () => d.hse.permits.filter((item) => permitState(item, now) === "expired").length,
+    weather: () => d.hse.wxEvents.filter((item) => !item.end).length,
+    emergency: () => d.hse.sos.filter((item) => item.status === "open" || item.status === "ack").length + d.hse.musters.filter((item) => !item.end).length,
+    people: () => Object.values(d.holds).filter((list) => list.length).length,
+    certs: () => d.skills.certs.filter((item) => expiryState(item.expires, d.today).state === "expired").length,
+    medicals: () => d.skills.medicals.filter((item) => item.next && item.next < d.today).length,
+    equipment: () => d.ops.equipment.filter((item) => item.status === "down").length,
+    workorders: () => d.ops.workorders.filter((item) => item.status === "open").length,
+    stock: () => d.ops.stock.filter((item) => item.qty <= item.min).length,
+  }[tab];
+  return count ? count() : 0;
+}
+
 function tabbed(view) {
   const tabs = TABS[view];
   const current = tabs.some(([key]) => key === m.tab[view]) ? m.tab[view] : tabs[0][0];
   return `
-    <nav class="m-tabs" role="tablist">${tabs.map(([key, label]) => `<button type="button" role="tab" class="m-tab${key === current ? " is-on" : ""}" aria-selected="${key === current}" data-m="tab" data-page="${view}" data-tab="${key}">${esc(label)}</button>`).join("")}</nav>
+    <div class="m-tabbar">
+      <nav class="m-tabs" role="tablist">${tabs
+        .map(([key, label, icon]) => {
+          const alert = tabAlert(key);
+          return `<button type="button" role="tab" class="m-tab${key === current ? " is-on" : ""}" aria-selected="${key === current}" data-m="tab" data-page="${view}" data-tab="${key}">${ico(icon)}<span>${esc(label)}</span>${alert ? `<i class="m-tab-alert">${alert}</i>` : ""}</button>`;
+        })
+        .join("")}</nav>
+    </div>
     ${tabBody(view, current)}`;
 }
 
@@ -386,7 +509,7 @@ function tabBody(view, tab) {
     emergency: emergencyTab,
     people: peopleTab,
     board: boardTab,
-    org: () => ["depts", "crews", "posts"].map((name) => collectionPanel(name)).join(""),
+    org: () => `<div class="m-grid">${collectionPanel("depts")}${collectionPanel("crews")}</div>${collectionPanel("posts")}`,
     rooms: roomsTab,
     transport: transportTab,
     payroll: payrollTab,
@@ -588,34 +711,79 @@ function rowActions(name, item) {
   return `<div class="acts">${buttons.join("")}</div>`;
 }
 
-function collectionPanel(name, { title, filter, note = "" } = {}) {
+function filterOf(name) {
+  const spec = FILTERS[name];
+  if (!spec) return null;
+  const field = COLLECTIONS[name].fields.find((item) => item.key === spec.key);
+  return { get: spec.get || ((item) => item[spec.key] ?? ""), labels: spec.labels ? spec.labels() : field?.options || {} };
+}
+
+function chipsHtml(key, list, spec) {
+  const counts = new Map();
+  for (const item of list) counts.set(spec.get(item), (counts.get(spec.get(item)) || 0) + 1);
+  const shown = Object.entries(spec.labels).filter(([value]) => counts.get(value));
+  if (shown.length < 2) return "";
+  const current = m.filter[key] || "";
+  const chip = (value, label, count) => `<button type="button" class="m-chip${current === value ? " is-on" : ""}" data-m="filter" data-key="${esc(key)}" data-value="${esc(value)}">${esc(label)}<i>${count}</i></button>`;
+  return `<div class="m-chips" role="group" aria-label="Шүүлтүүр">${ico("sliders")}${chip("", "Бүгд", list.length)}${shown.map(([value, label]) => chip(value, label, counts.get(value))).join("")}</div>`;
+}
+
+/** Form fields left out of the table, shown when a row is opened. */
+function detailFields(name, item) {
+  return COLLECTIONS[name].fields.filter((field) => {
+    if (field.list) return false;
+    const value = item[field.key];
+    if (field.type === "photo") return Boolean(item.photo);
+    return !(value === null || value === undefined || value === "" || (Array.isArray(value) && !value.length));
+  });
+}
+
+function detailValue(name, field, item) {
+  const value = item[field.key];
+  if (field.type === "long") return `<p class="m-pre">${esc(value)}</p>`;
+  if (field.type === "photo") return `<button type="button" class="m-thumb" data-m="photo" data-id="${item.id}"><img src="/api/master/photo/${item.id}" alt="" loading="lazy" /></button>`;
+  if (field.type === "geo") return `<a href="https://www.openstreetmap.org/?mlat=${value.lat}&mlon=${value.lng}#map=17/${value.lat}/${value.lng}" target="_blank" rel="noopener">${ico("map", "m-ico tiny")} ${value.lat.toFixed(5)}, ${value.lng.toFixed(5)}</a>`;
+  if (field.type === "users") return value.map((uid) => badge(nameOf(uid))).join(" ");
+  if (field.type === "checks") {
+    const missing = Object.keys(field.options).filter((key) => !value.includes(key));
+    return name === "prestarts" && missing.length ? missing.map((key) => badge(field.options[key], CRITICAL_ITEMS.includes(key) ? "bad" : "warn")).join(" ") : value.map((key) => badge(field.options[key] || key, "ok")).join(" ");
+  }
+  return cellOf(name, field, item);
+}
+
+function collectionPanel(name, { title, filter, key = name } = {}) {
   const schema = COLLECTIONS[name];
   const columns = schema.fields.filter((field) => field.list);
   const extras = EXTRA_COLS[name] || [];
-  const query = (m.query[name] || "").toLowerCase();
-  const list = records(name).filter(filter || (() => true)).sort(sortKey(name));
+  const span = columns.length + extras.length + 2;
+  const query = (m.query[key] || "").toLowerCase();
+  const base = records(name).filter(filter || (() => true)).sort(sortKey(name));
+  const spec = filterOf(name);
+  const chosen = spec && m.filter[key] && base.some((item) => spec.get(item) === m.filter[key]) ? m.filter[key] : "";
+  const list = chosen ? base.filter((item) => spec.get(item) === chosen) : base;
   const rows = list
     .map((item) => {
       const text = searchText(name, item);
-      return `<tr data-search="${esc(text)}"${query && !text.includes(query) ? " hidden" : ""}>${columns.map((field) => `<td>${cellOf(name, field, item)}</td>`).join("")}${extras.map(([, render]) => `<td>${render(item)}</td>`).join("")}<td>${rowActions(name, item)}</td></tr>`;
+      const hide = query && !text.includes(query);
+      const details = detailFields(name, item);
+      const open = details.length && m.open.has(item.id);
+      const toggle = details.length ? `<button type="button" class="m-row-toggle" data-m="row" data-id="${item.id}" aria-expanded="${Boolean(open)}" aria-label="Дэлгэрэнгүй">${ico("chevron")}</button>` : "";
+      const main = `<tr class="m-row${open ? " is-open" : ""}${details.length ? " has-detail" : ""}" data-row="${item.id}" data-search="${esc(text)}"${hide ? " hidden" : ""}><td class="m-tcell">${toggle}</td>${columns.map((field) => `<td data-label="${esc(field.label)}">${cellOf(name, field, item)}</td>`).join("")}${extras.map(([label, render]) => `<td data-label="${esc(label)}">${render(item)}</td>`).join("")}<td>${rowActions(name, item)}</td></tr>`;
+      const detail = details.length ? `<tr class="m-detail" data-for="${item.id}"${open && !hide ? "" : " hidden"}><td colspan="${span}"><dl class="m-dl">${details.map((field) => `<div class="${["long", "users", "checks", "photo"].includes(field.type) ? "is-wide" : ""}"><dt>${esc(field.label)}</dt><dd>${detailValue(name, field, item)}</dd></div>`).join("")}</dl></td></tr>` : "";
+      return main + detail;
     })
     .join("");
-  return `
-    <section class="panel m-panel">
-      <div class="m-panel-head">
-        <h2>${esc(title || schema.label)} <small>${list.length}</small></h2>
-        <div class="m-tools">
-          <input type="search" class="m-search" data-mq="${name}" value="${esc(m.query[name] || "")}" placeholder="Хайх" aria-label="${esc(schema.label)} хайх" />
-          <button class="icon-btn" type="button" data-m="csv" data-name="${name}" title="CSV татах" aria-label="CSV татах">${ico("download")}</button>
-          <button class="primary" type="button" data-m="new" data-name="${name}">${ico("add")}Нэмэх</button>
-        </div>
-      </div>
-      ${note}
-      <div class="m-scroll"><table class="user-table m-table">
-        <thead><tr>${columns.map((field) => `<th>${esc(field.label)}</th>`).join("")}${extras.map(([label]) => `<th>${esc(label)}</th>`).join("")}<th></th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="${columns.length + extras.length + 1}" class="muted">Бүртгэл алга</td></tr>`}</tbody>
-      </table></div>
-    </section>`;
+  const tools = `
+    <label class="m-searchbox">${ico("search")}<input type="search" class="m-search" data-mq="${esc(key)}" value="${esc(m.query[key] || "")}" placeholder="Хайх" aria-label="${esc(schema.label)} хайх" /></label>
+    <button class="icon-btn" type="button" data-m="csv" data-name="${name}" title="CSV татах" aria-label="CSV татах">${ico("download")}</button>
+    ${addBtn(name)}`;
+  const body = `
+    ${spec ? chipsHtml(key, base, spec) : ""}
+    <div class="m-scroll"><table class="m-table">
+      <thead><tr><th class="m-tcell"></th>${columns.map((field) => `<th>${esc(field.label)}</th>`).join("")}${extras.map(([label]) => `<th>${esc(label)}</th>`).join("")}<th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="${span}" class="m-empty">${ico(COL_ICON[name] || "list")}<span>Бүртгэл алга</span></td></tr>`}</tbody>
+    </table></div>`;
+  return panel({ key, icon: COL_ICON[name] || "list", title: title || schema.label, count: list.length === base.length ? base.length : `${list.length}/${base.length}`, tools, body });
 }
 
 function csvCell(name, field, item) {
@@ -896,7 +1064,7 @@ async function startScan(wrap, onCode) {
   }, 300);
 }
 
-const SCAN_BOX = `<div class="m-scan" hidden><video playsinline muted></video><p class="m-scan-msg" role="status">ID карт эсвэл түр нэвтрэх QR-ийг камерт харуулна уу.</p></div>`;
+const SCAN_BOX = `<div class="m-scan" hidden><video playsinline muted></video><p class="m-scan-msg" role="status">${ico("qr", "m-ico tiny")} QR</p></div>`;
 
 /* ---------- toolbox talk acknowledgement ---------- */
 
@@ -914,13 +1082,13 @@ function talkAckBody(id) {
   return `<div class="m-talk"><p class="m-talk-text">${esc(talk.content)}</p>
     <div class="m-acts"><button class="primary" type="button" data-scan>${ico("qr")}Карт уншуулж бүртгэх</button></div>
     ${SCAN_BOX}
-    <ul class="m-roll">${rows || `<li class="muted">Энэ ээлжид төлөвлөгдсөн ажилтан алга</li>`}</ul></div>`;
+    <ul class="m-roll">${rows || `<li class="m-none">${ico("people", "m-ico tiny")}Ажилтан алга</li>`}</ul></div>`;
 }
 
 function openTalkAcks(id) {
   const talk = recordOf("talks", id);
   if (!talk) return;
-  const wrap = ctx.openModal({ shield: ico("people"), title: esc(talk.topic), sub: `${fmtDate(talk.date)} · ${SHIFTS[talk.shift]} ээлж · «Уншиж ойлгосон» бүртгэл`, body: talkAckBody(id), className: "m-modal" });
+  const wrap = ctx.openModal({ shield: ico("people"), title: esc(talk.topic), sub: `${fmtDate(talk.date)} · ${SHIFTS[talk.shift]} ээлж`, body: talkAckBody(id), className: "m-modal" });
   if (!wrap) return;
   const body = wrap.querySelector(".modal-body");
   const repaint = () => {
@@ -963,7 +1131,7 @@ function musterBody() {
     ${SCAN_BOX}
     <div class="m-muster-lists">
       <h3>Дутуу</h3>
-      <ul class="m-roll">${missing.map((key) => `<li><b>${esc(label(key))}</b><span><button class="chip" type="button" data-here="${esc(key)}">${ico("check")}Ирсэн</button></span></li>`).join("") || `<li class="muted">Бүгд цугласан</li>`}</ul>
+      <ul class="m-roll">${missing.map((key) => `<li><b>${esc(label(key))}</b><span><button class="chip" type="button" data-here="${esc(key)}">${ico("check")}Ирсэн</button></span></li>`).join("") || `<li class="m-none">${ico("check", "m-ico tiny")}Бүгд цугласан</li>`}</ul>
       <h3>Цугласан</h3>
       <ul class="m-roll">${present.map((key) => `<li><b>${esc(label(key))}</b><span>${badge(`${clockOf(muster.checked[key].at)} · ${muster.checked[key].via === "qr" ? "QR" : muster.checked[key].via === "app" ? "апп" : "мастер"}`, "ok")}</span></li>`).join("")}</ul>
     </div>
@@ -984,7 +1152,7 @@ function watchModal(wrap, repaint) {
 function openMuster() {
   const muster = m.data.hse.musters.find((item) => !item.end);
   if (!muster) return;
-  const wrap = ctx.openModal({ shield: ico("people"), title: `Цуглаан · ${esc(muster.reason)}`, sub: `${clockOf(muster.at)}-с эхэлсэн · ирцээр талбай дээр байгаа хүмүүсээр тоолно`, body: musterBody(), className: "m-modal" });
+  const wrap = ctx.openModal({ shield: ico("people"), title: `Цуглаан · ${esc(muster.reason)}`, sub: `${clockOf(muster.at)}-с`, body: musterBody(), className: "m-modal" });
   if (!wrap) return;
   const body = wrap.querySelector(".modal-body");
   const repaint = () => {
@@ -1053,7 +1221,7 @@ function openPass(id) {
   const wrap = ctx.openModal({
     shield: ico("qr"),
     title: "Түр нэвтрэх эрх",
-    sub: "Цуглаанд энэ QR-ээр бүртгэгдэнэ",
+    sub: `${fmtDate(item.from)} – ${fmtDate(item.to)}`,
     body: `${passHtml(item)}<div class="modal-actions"><button class="chip" type="button" data-close>Хаах</button><button class="primary" type="button" data-print>${ico("print")}Хэвлэх</button></div>`,
     className: "m-modal",
   });
@@ -1111,50 +1279,66 @@ function productionChart(kpi) {
 
 function kpiPanel() {
   const kpi = m.data.kpi;
-  const card = (value, label, note = "", tone = "") => `<div class="m-kpi${tone ? ` is-${tone}` : ""}"><b>${value}</b><span>${label}</span>${note ? `<small>${note}</small>` : ""}</div>`;
-  return `<section class="panel m-panel">
-    <div class="m-panel-head"><h2>Гүйцэтгэлийн үзүүлэлт <small>7 хоног</small></h2>
-      <form class="m-inline" data-mform="plan"><label>Өдрийн төлөвлөгөө <input type="number" name="planTonnes" min="0" step="100" value="${m.data.ops.planTonnes}" /> т</label><button class="chip" type="submit">Хадгалах</button></form></div>
-    <div class="m-kpis">
-      ${card(`${num(kpi.prodTotal)} т`, "Олборлолт", `Төлөвлөгөө ${num(kpi.prodPlan)} т · ${kpi.prodPlan ? Math.round((kpi.prodTotal / kpi.prodPlan) * 100) : 0}%`, kpi.prodTotal >= kpi.prodPlan ? "ok" : "warn")}
-      ${card(pct(kpi.availability), "Техникийн бэлэн байдал", "Эвдрэл, засварын зогсолтыг хассан")}
-      ${card(pct(kpi.utilization), "Ашиглалт", "Хуваарилсан ээлж / бэлэн цаг")}
-      ${card(kpi.ltifr, "LTIFR", `${kpi.lti} LTI · ${kpi.windowDays} хоног · ${num(kpi.hoursWorked)} хүн-цаг`, kpi.lti ? "bad" : "ok")}
-      ${card(kpi.trifr, "TRIFR", `${kpi.recordable} бүртгэгдэх гэмтэл`, kpi.recordable ? "warn" : "ok")}
+  const card = (icon, value, label, note = "", tone = "") => `<div class="m-kpi${tone ? ` is-${tone}` : ""}">${ico(icon)}<b>${value}</b><span>${label}</span>${note ? `<small>${note}</small>` : ""}</div>`;
+  const tools = `<form class="m-inline" data-mform="plan"><label title="Өдрийн төлөвлөгөө, тонн">${ico("calendar")}<input type="number" name="planTonnes" min="0" step="100" value="${m.data.ops.planTonnes}" aria-label="Өдрийн төлөвлөгөө, тонн" /><span>т</span></label><button class="icon-btn" type="submit" title="Хадгалах" aria-label="Хадгалах">${ico("check")}</button></form>`;
+  return panel({
+    key: "kpi",
+    icon: "chart",
+    title: "Гүйцэтгэл · 7 хоног",
+    tools,
+    body: `<div class="m-kpis">
+      ${card("mine", `${num(kpi.prodTotal)} т`, "Олборлолт", `${num(kpi.prodPlan)} т · ${kpi.prodPlan ? Math.round((kpi.prodTotal / kpi.prodPlan) * 100) : 0}%`, kpi.prodTotal >= kpi.prodPlan ? "ok" : "warn")}
+      ${card("truck", pct(kpi.availability), "Бэлэн байдал")}
+      ${card("gauge", pct(kpi.utilization), "Ашиглалт")}
+      ${card("shield", kpi.ltifr, "LTIFR", `${kpi.lti} LTI · ${num(kpi.hoursWorked)} хүн-цаг`, kpi.lti ? "bad" : "ok")}
+      ${card("heart", kpi.trifr, "TRIFR", `${kpi.recordable} гэмтэл`, kpi.recordable ? "warn" : "ok")}
     </div>
-    ${productionChart(kpi)}
-  </section>`;
+    ${productionChart(kpi)}`,
+  });
 }
 
 function fleetPanel() {
   const machines = [...m.data.ops.equipment].sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true }));
-  return `<section class="panel m-panel">
-    <div class="m-panel-head"><h2>Техникийн байдал <small>${SHIFTS[m.data.shift]} ээлж</small></h2></div>
-    <div class="m-fleet">${machines
+  const chosen = m.filter.fleet || "";
+  const counts = machines.reduce((acc, item) => ({ ...acc, [item.status]: (acc[item.status] || 0) + 1 }), {});
+  const chip = (value, label, count) => `<button type="button" class="m-chip${chosen === value ? " is-on" : ""}" data-m="filter" data-key="fleet" data-value="${value}">${esc(label)}<i>${count}</i></button>`;
+  const chips = `<div class="m-chips">${ico("sliders")}${chip("", "Бүгд", machines.length)}${Object.entries(EQUIP_STATUS).filter(([key]) => counts[key]).map(([key, label]) => chip(key, label, counts[key])).join("")}</div>`;
+  return panel({
+    key: "fleet",
+    icon: "truck",
+    title: `Техник · ${SHIFTS[m.data.shift]} ээлж`,
+    count: machines.length,
+    body: `${chips}<div class="m-fleet">${machines
+      .filter((item) => !chosen || item.status === chosen)
       .map((item) => {
         const assign = records("assigns").find((row) => row.equipment === item.id && row.date === m.data.shiftDate && row.shift === m.data.shift);
         const service = serviceDue(item);
         return `<button type="button" class="m-machine is-${item.status}" data-m="edit" data-name="equipment" data-id="${item.id}">
-          <b>${esc(item.code)}</b><span>${esc(EQUIP_TYPES[item.type])}</span>
-          <small>${assign ? esc(nameOf(assign.operator)) : esc(EQUIP_STATUS[item.status])}</small>
+          <span class="m-machine-top"><b>${esc(item.code)}</b>${badge(EQUIP_STATUS[item.status], TONE.equip[item.status])}</span>
+          <span>${esc(EQUIP_TYPES[item.type])}</span>
+          <small>${assign ? `${ico("user", "m-ico tiny")} ${esc(nameOf(assign.operator))}` : "–"}</small>
           ${service.due ? `<i class="m-dot" title="Засварын хугацаа болсон"></i>` : ""}
         </button>`;
       })
-      .join("")}</div>
-  </section>`;
+      .join("")}</div>`,
+  });
 }
+
+const subHead = (icon, text, count) => `<h3 class="m-sub">${ico(icon, "m-ico tiny")}${esc(text)}${count != null ? `<span>${count}</span>` : ""}</h3>`;
 
 function peopleSummary() {
   const d = m.data;
   const unfit = Object.entries(d.fatigue).filter(([, item]) => item.state === "unfit" || item.state === "caution");
   const held = Object.entries(d.holds).filter(([, list]) => list.length);
-  return `<section class="panel m-panel">
-    <div class="m-panel-head"><h2>Хүмүүс</h2></div>
-    <h3 class="m-sub">Картын хориг</h3>
-    <ul class="m-roll">${held.map(([uid, list]) => `<li><b>${esc(nameOf(uid))}</b><span>${list.map((text) => badge(text, "bad")).join(" ")}</span></li>`).join("") || `<li class="muted">Хоригтой ажилтан алга</li>`}</ul>
-    <h3 class="m-sub">Ядаргаа (нойр, ажилласан цаг)</h3>
-    <ul class="m-roll">${unfit.map(([uid, item]) => `<li><b>${esc(nameOf(uid))}</b><span>${badge(item.label, item.state === "unfit" ? "bad" : "warn")} <small class="muted">${esc(item.reasons.join(", "))}</small></span></li>`).join("") || `<li class="muted">Бүгд тэнцсэн эсвэл мэдээлэлгүй</li>`}</ul>
-  </section>`;
+  return panel({
+    key: "people-sum",
+    icon: "people",
+    title: "Хүмүүс",
+    body: `${subHead("lock", "Картын хориг", held.length)}
+    <ul class="m-roll">${held.map(([uid, list]) => `<li><b>${esc(nameOf(uid))}</b><span>${list.map((text) => badge(text, "bad")).join(" ")}</span></li>`).join("") || `<li class="m-none">${ico("check", "m-ico tiny")}Хориггүй</li>`}</ul>
+    ${subHead("clock", "Ядаргаа", unfit.length)}
+    <ul class="m-roll">${unfit.map(([uid, item]) => `<li><b>${esc(nameOf(uid))}</b><span>${badge(item.label, item.state === "unfit" ? "bad" : "warn")} <small class="muted">${esc(item.reasons.join(", "))}</small></span></li>`).join("") || `<li class="m-none">${ico("check", "m-ico tiny")}Хэвийн</li>`}</ul>`,
+  });
 }
 
 function todaySafety() {
@@ -1163,53 +1347,48 @@ function todaySafety() {
   const talks = d.hse.talks.filter((item) => item.date === d.shiftDate);
   const permits = d.hse.permits.filter((item) => ["active", "expired"].includes(permitState(item, now)));
   const blasts = d.hse.blasts.filter((item) => item.status === "planned").sort((a, b) => a.at.localeCompare(b.at));
-  return `<section class="panel m-panel">
-    <div class="m-panel-head"><h2>Өнөөдрийн аюулгүй ажиллагаа</h2></div>
-    <h3 class="m-sub">Ээлжийн өмнөх зааварчилгаа</h3>
+  return panel({
+    key: "today-safety",
+    icon: "shield",
+    title: "Өнөөдрийн аюулгүй ажиллагаа",
+    body: `${subHead("megaphone", "Зааварчилгаа", talks.length)}
     <ul class="m-roll">${talks.map((item) => {
       const audience = d.audience[item.id] || [];
       const acked = item.acks.filter((ack) => audience.includes(ack.uid)).length;
-      return `<li><b>${SHIFTS[item.shift]} · ${esc(item.topic)}</b><span>${badge(`${acked}/${audience.length}`, acked === audience.length ? "ok" : "warn")} <button class="chip" type="button" data-m="talk-acks" data-id="${item.id}">Бүртгэх</button></span></li>`;
-    }).join("") || `<li class="muted">Өнөөдөр зааварчилгаа оруулаагүй · <button class="chip" type="button" data-m="new" data-name="talks">Нэмэх</button></li>`}</ul>
-    <h3 class="m-sub">Ажлын зөвшөөрөл</h3>
+      return `<li><b>${SHIFTS[item.shift]} · ${esc(item.topic)}</b><span>${badge(`${acked}/${audience.length}`, acked === audience.length ? "ok" : "warn")}${toolBtn("talk-acks", "people", "Танилцсан бүртгэл", ` data-id="${item.id}"`)}</span></li>`;
+    }).join("") || `<li class="m-none">${ico("megaphone", "m-ico tiny")}Алга <button class="icon-btn" type="button" data-m="new" data-name="talks" title="Нэмэх" aria-label="Нэмэх">${ico("add")}</button></li>`}</ul>
+    ${subHead("permit", "Ажлын зөвшөөрөл", permits.length)}
     <ul class="m-roll">${permits.map((item) => {
       const state = permitState(item, now);
       return `<li><b>${esc(PERMIT_TYPES[item.type])} · ${esc(item.title)}</b><span>${badge(state === "expired" ? `${clockOf(item.to)}-д дууссан` : `${clockOf(item.to)} хүртэл`, state === "expired" ? "bad" : "ok")} <small class="muted">${esc(nameOf(item.holder))}</small></span></li>`;
-    }).join("") || `<li class="muted">Идэвхтэй зөвшөөрөл алга</li>`}</ul>
-    <h3 class="m-sub">Тэсэлгээ</h3>
-    <ul class="m-roll">${blasts.map((item) => `<li><b>${fmtMoment(item.at)} · ${esc(item.place)}</b><span>${badge(`${item.radius} м`, "warn")} <small class="muted">${esc(nameOf(item.blaster))}</small></span></li>`).join("") || `<li class="muted">Төлөвлөсөн тэсэлгээ алга</li>`}</ul>
-  </section>`;
+    }).join("") || `<li class="m-none">${ico("permit", "m-ico tiny")}Алга</li>`}</ul>
+    ${subHead("blast", "Тэсэлгээ", blasts.length)}
+    <ul class="m-roll">${blasts.map((item) => `<li><b>${fmtMoment(item.at)} · ${esc(item.place)}</b><span>${badge(`${item.radius} м`, "warn")} <small class="muted">${esc(nameOf(item.blaster))}</small></span></li>`).join("") || `<li class="m-none">${ico("blast", "m-ico tiny")}Алга</li>`}</ul>`,
+  });
 }
+
+const WX_ICON = { wind: "sliders", cold: "cloud", heat: "cloud", thunder: "blast", precip: "cloud" };
 
 function weatherCard() {
   const weather = m.data.weather;
-  const rules = m.data.hse.wxRules.filter((item) => item.enabled);
   const cells = Object.entries(WX_METRICS).map(([key, spec]) => {
     const value = wxValue(weather, key);
-    return `<div><b>${value == null ? "–" : spec.op === "flag" ? (value ? "Тийм" : "Үгүй") : `${Math.round(value * 10) / 10}`}</b><span>${esc(spec.label)}${spec.unit && spec.op !== "flag" ? `, ${esc(spec.unit)}` : ""}</span></div>`;
+    return `<div>${ico(WX_ICON[key] || "cloud")}<b>${value == null ? "–" : spec.op === "flag" ? (value ? "Тийм" : "Үгүй") : `${Math.round(value * 10) / 10}`}</b><span>${esc(spec.label)}${spec.unit && spec.op !== "flag" ? `, ${esc(spec.unit)}` : ""}</span></div>`;
   });
-  return `<section class="panel m-panel">
-    <div class="m-panel-head"><h2>Цаг агаар <small>${weather ? `${weather.simulated ? "туршилтын утга · " : ""}${esc(weather.condition || "")}` : "мэдээлэлгүй"}</small></h2></div>
-    <div class="m-wx">${cells.join("")}</div>
-    <p class="muted m-note">${rules.length} босго хянагдаж байна. Босго давахад White Queen станц ажил зогсоохыг зарлаж, талбай дээрх ажилчдын утсанд мэдэгдэл очно.</p>
-  </section>`;
+  const tag = weather ? `${weather.simulated ? badge("туршилт", "info") : ""} ${esc(weather.condition || "")}` : "–";
+  return panel({ key: "weather-now", icon: "cloud", title: "Цаг агаар", tools: `<span class="m-head-note">${tag}</span>`, body: `<div class="m-wx">${cells.join("")}</div>` });
 }
 
 function emergencyPanel() {
   const muster = m.data.hse.musters.find((item) => !item.end);
-  return `<section class="panel m-panel m-emergency">
-    <div class="m-panel-head"><h2>Онцгой байдал</h2></div>
-    ${
-      muster
-        ? `<p>Цуглаан явагдаж байна: <b>${esc(muster.reason)}</b></p><button class="primary" type="button" data-m="muster-open">${ico("people")}Цуглааны жагсаалт</button>`
-        : `<form class="m-form m-muster-form" data-mform="muster-start">
-            <label class="m-field is-wide"><span>Шалтгаан</span><input name="reason" maxlength="120" placeholder="Жишээ: Гал гарсан, хийн алдагдал, сургуулилт" /></label>
-            <label class="m-field m-check"><input type="checkbox" name="announce" checked /> <span>White Queen станцаар зарлах</span></label>
-            <button class="primary danger" type="submit">${ico("bell")}Цуглаан зарлах</button>
-          </form>
-          <p class="muted m-note">Ирцээр талбай дээр байгаа бүх ажилтан болон талбайд нэвтэрсэн зочдыг жагсааж, цуглах цэгт QR-ээр тоолно.</p>`
-    }
-  </section>`;
+  const body = muster
+    ? `<div class="m-live">${ico("people")}<b>${esc(muster.reason)}</b><button class="primary" type="button" data-m="muster-open">${ico("list")}Жагсаалт</button></div>`
+    : `<form class="m-muster-form" data-mform="muster-start">
+        <input name="reason" maxlength="120" placeholder="Шалтгаан" aria-label="Шалтгаан" />
+        <label class="m-switch" title="White Queen станцаар зарлах"><input type="checkbox" name="announce" checked /><span>${ico("megaphone", "m-ico tiny")}Станц</span></label>
+        <button class="primary danger" type="submit">${ico("siren")}Цуглаан зарлах</button>
+      </form>`;
+  return panel({ key: "emergency", icon: "siren", title: "Онцгой байдал", body, cls: "m-emergency" });
 }
 
 function dashboard() {
@@ -1226,11 +1405,7 @@ function dashboard() {
 function weatherTab() {
   const sim = m.data.wxSim;
   const events = [...m.data.hse.wxEvents].reverse().slice(0, 20);
-  return `<div class="m-grid">
-    ${weatherCard()}
-    <section class="panel m-panel">
-      <div class="m-panel-head"><h2>Туршилт · цаг агаар дуурайх</h2></div>
-      <form class="m-form" data-mform="wxsim">
+  const simForm = `<form class="m-form" data-mform="wxsim">
         <div class="m-form-grid">
           <label class="m-field"><span>Салхи, м/с</span><input type="number" name="windSpeedMs" min="0" max="60" step="0.1" value="${esc(sim?.windSpeedMs ?? "")}" placeholder="бодит" /></label>
           <label class="m-field"><span>Мэдрэгдэх темп., °C</span><input type="number" name="feelsLikeC" min="-70" max="60" step="0.1" value="${esc(sim?.feelsLikeC ?? "")}" placeholder="бодит" /></label>
@@ -1238,17 +1413,16 @@ function weatherTab() {
           <label class="m-field"><span>Хугацаа, минут</span><input type="number" name="minutes" min="1" max="120" value="15" /></label>
           <label class="m-field m-check"><input type="checkbox" name="thunder"${sim?.code ? " checked" : ""} /> <span>Аянга, аадар</span></label>
         </div>
-        <div class="modal-actions">${sim ? `<button class="chip" type="button" data-m="wxsim-clear">Туршилтыг зогсоох · ${clockOf(sim.until)} хүртэл</button>` : ""}<button class="primary" type="submit">${ico("play")}Туршилт эхлүүлэх</button></div>
-      </form>
-      <p class="muted m-note">Танилцуулгын зорилгоор бодит утгын оронд түр утга тавьж, ажил зогсоох дохиог шалгана. Хугацаа дуусахад автоматаар бодит цаг агаарт шилжинэ.</p>
-    </section>
+        <div class="modal-actions">${sim ? `<button class="chip" type="button" data-m="wxsim-clear">${ico("stop")}${clockOf(sim.until)} хүртэл</button>` : ""}<button class="primary" type="submit">${ico("play")}Эхлүүлэх</button></div>
+      </form>`;
+  const history = `<div class="m-scroll"><table class="m-table"><thead><tr><th>Босго</th><th>Эхэлсэн</th><th>Дууссан</th><th>Утга</th><th>Арга хэмжээ</th></tr></thead>
+    <tbody>${events.map((item) => `<tr><td>${esc(item.name)}${item.simulated ? ` ${badge("туршилт", "info")}` : ""}</td><td>${fmtMoment(item.start)}</td><td>${item.end ? fmtMoment(item.end) : badge("Үргэлжилж байна", "bad")}</td><td>${item.value == null ? "–" : Math.round(item.value * 10) / 10}</td><td>${esc(item.action)}</td></tr>`).join("") || `<tr><td colspan="5" class="m-empty">${ico("clock")}<span>Түүх алга</span></td></tr>`}</tbody></table></div>`;
+  return `<div class="m-grid">
+    ${weatherCard()}
+    ${panel({ key: "wx-sim", icon: "play", title: "Цаг агаар дуурайх", tools: sim ? badge("идэвхтэй", "info") : "", body: simForm })}
   </div>
   ${collectionPanel("wxRules")}
-  <section class="panel m-panel">
-    <div class="m-panel-head"><h2>Ажил зогсоосон түүх <small>${events.length}</small></h2></div>
-    <div class="m-scroll"><table class="user-table m-table"><thead><tr><th>Босго</th><th>Эхэлсэн</th><th>Дууссан</th><th>Утга</th><th>Арга хэмжээ</th></tr></thead>
-    <tbody>${events.map((item) => `<tr><td>${esc(item.name)}${item.simulated ? ` ${badge("туршилт", "info")}` : ""}</td><td>${fmtMoment(item.start)}</td><td>${item.end ? fmtMoment(item.end) : badge("Үргэлжилж байна", "bad")}</td><td>${item.value == null ? "–" : Math.round(item.value * 10) / 10}</td><td>${esc(item.action)}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">Түүх алга</td></tr>`}</tbody></table></div>
-  </section>`;
+  ${panel({ key: "wx-history", icon: "clock", title: "Ажил зогсоосон түүх", count: events.length, body: history })}`;
 }
 
 function emergencyTab() {
@@ -1257,39 +1431,38 @@ function emergencyTab() {
   const sos = [...d.hse.sos].reverse().slice(0, 40);
   const lone = d.hse.lone.filter((item) => item.active);
   const musters = [...d.hse.musters].reverse().slice(0, 10);
-  return `<div class="m-grid">${emergencyPanel()}
-    <section class="panel m-panel">
-      <div class="m-panel-head"><h2>Ганцаар ажиллагч <small>${lone.length}</small></h2></div>
-      <ul class="m-roll">${lone.map((item) => {
+  const loneList = `<ul class="m-roll">${lone.map((item) => {
         const due = Date.parse(item.lastCheck) + item.interval * 60000;
-        return `<li><b>${esc(nameOf(item.uid))}${item.place ? ` · ${esc(item.place)}` : ""}</b><span>${due < now ? badge(`${untilText(now - due)} хоцорсон`, "bad") : badge(`${untilText(due - now)}-д хариу өгнө`, "ok")} <small class="muted">${item.interval} мин тутам</small></span></li>`;
-      }).join("") || `<li class="muted">Идэвхтэй ганцаар ажиллагч алга</li>`}</ul>
-      <p class="muted m-note">Ажилтан апп дээр «Ганцаар ажиллаж байна» горим асаана. Хугацаандаа «Би зүгээр» дарахгүй бол автоматаар SOS үүсч, станц зарлана.</p>
-    </section></div>
-    <section class="panel m-panel">
-      <div class="m-panel-head"><h2>SOS дохио <small>${sos.length}</small></h2></div>
-      <div class="m-scroll"><table class="user-table m-table"><thead><tr><th>Хэзээ</th><th>Ажилтан</th><th>Төрөл</th><th>Байршил</th><th>Төлөв</th><th></th></tr></thead>
-      <tbody>${sos.map((item) => `<tr><td>${fmtMoment(item.at)}</td><td>${esc(nameOf(item.uid))}</td><td>${esc(SOS_KINDS[item.kind])}</td><td>${item.geo ? `<a href="https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}#map=17/${item.geo.lat}/${item.geo.lng}" target="_blank" rel="noopener">${item.geo.lat.toFixed(4)}, ${item.geo.lng.toFixed(4)}</a>` : "–"}</td><td>${badge(SOS_STATUS[item.status], item.status === "open" ? "bad" : item.status === "ack" ? "warn" : "ok")}${item.ackBy ? ` <small class="muted">${esc(nameOf(item.ackBy))}</small>` : ""}</td>
-        <td><div class="acts">${item.status === "open" ? `<button class="chip" type="button" data-m="sos" data-id="${item.id}" data-status="ack">Хүлээн авлаа</button>` : ""}${item.status === "open" || item.status === "ack" ? `<button class="chip" type="button" data-m="sos" data-id="${item.id}" data-status="resolved">Шийдвэрлэсэн</button>` : ""}</div></td></tr>`).join("") || `<tr><td colspan="6" class="muted">SOS дохио ирээгүй</td></tr>`}</tbody></table></div>
-    </section>
-    <section class="panel m-panel">
-      <div class="m-panel-head"><h2>Цуглааны түүх</h2></div>
-      <div class="m-scroll"><table class="user-table m-table"><thead><tr><th>Эхэлсэн</th><th>Шалтгаан</th><th>Дууссан</th><th>Цугласан</th></tr></thead>
-      <tbody>${musters.map((item) => `<tr><td>${fmtMoment(item.at)}</td><td>${esc(item.reason)}</td><td>${item.end ? fmtMoment(item.end) : badge("Явагдаж байна", "bad")}</td><td>${Object.keys(item.checked).length}/${item.expected.length}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Цуглаан зарлагдаагүй</td></tr>`}</tbody></table></div>
-    </section>`;
+        return `<li><b>${esc(nameOf(item.uid))}${item.place ? ` · ${esc(item.place)}` : ""}</b><span>${due < now ? badge(`${untilText(now - due)} хоцорсон`, "bad") : badge(`${untilText(due - now)}`, "ok")} <small class="muted">${item.interval} мин</small></span></li>`;
+      }).join("") || `<li class="m-none">${ico("user", "m-ico tiny")}Алга</li>`}</ul>`;
+  const sosChosen = m.filter.sos || "";
+  const sosCounts = sos.reduce((acc, item) => ({ ...acc, [item.status]: (acc[item.status] || 0) + 1 }), {});
+  const sosChip = (value, label, count) => `<button type="button" class="m-chip${sosChosen === value ? " is-on" : ""}" data-m="filter" data-key="sos" data-value="${value}">${esc(label)}<i>${count}</i></button>`;
+  const sosChips = Object.keys(sosCounts).length > 1 ? `<div class="m-chips">${ico("sliders")}${sosChip("", "Бүгд", sos.length)}${Object.entries(SOS_STATUS).filter(([key]) => sosCounts[key]).map(([key, label]) => sosChip(key, label, sosCounts[key])).join("")}</div>` : "";
+  const sosTable = `${sosChips}<div class="m-scroll"><table class="m-table"><thead><tr><th>Хэзээ</th><th>Ажилтан</th><th>Төрөл</th><th>Байршил</th><th>Төлөв</th><th></th></tr></thead>
+      <tbody>${sos.filter((item) => !sosChosen || item.status === sosChosen).map((item) => `<tr><td>${fmtMoment(item.at)}</td><td>${esc(nameOf(item.uid))}</td><td>${esc(SOS_KINDS[item.kind])}</td><td>${item.geo ? `<a href="https://www.openstreetmap.org/?mlat=${item.geo.lat}&mlon=${item.geo.lng}#map=17/${item.geo.lat}/${item.geo.lng}" target="_blank" rel="noopener">${ico("map", "m-ico tiny")} ${item.geo.lat.toFixed(4)}, ${item.geo.lng.toFixed(4)}</a>` : "–"}</td><td>${badge(SOS_STATUS[item.status], item.status === "open" ? "bad" : item.status === "ack" ? "warn" : "ok")}${item.ackBy ? ` <small class="muted">${esc(nameOf(item.ackBy))}</small>` : ""}</td>
+        <td><div class="acts">${item.status === "open" ? `<button class="chip" type="button" data-m="sos" data-id="${item.id}" data-status="ack">${ico("check")}Хүлээн авлаа</button>` : ""}${item.status === "open" || item.status === "ack" ? `<button class="chip" type="button" data-m="sos" data-id="${item.id}" data-status="resolved">${ico("shield")}Шийдвэрлэсэн</button>` : ""}</div></td></tr>`).join("") || `<tr><td colspan="6" class="m-empty">${ico("sos")}<span>SOS алга</span></td></tr>`}</tbody></table></div>`;
+  const musterTable = `<div class="m-scroll"><table class="m-table"><thead><tr><th>Эхэлсэн</th><th>Шалтгаан</th><th>Дууссан</th><th>Цугласан</th></tr></thead>
+      <tbody>${musters.map((item) => `<tr><td>${fmtMoment(item.at)}</td><td>${esc(item.reason)}</td><td>${item.end ? fmtMoment(item.end) : badge("Явагдаж байна", "bad")}</td><td>${Object.keys(item.checked).length}/${item.expected.length}</td></tr>`).join("") || `<tr><td colspan="4" class="m-empty">${ico("people")}<span>Цуглаан алга</span></td></tr>`}</tbody></table></div>`;
+  return `<div class="m-grid">${emergencyPanel()}${panel({ key: "lone", icon: "user", title: "Ганцаар ажиллагч", count: lone.length, body: loneList })}</div>
+    ${panel({ key: "sos-list", icon: "sos", title: "SOS дохио", count: sos.length, body: sosTable })}
+    ${panel({ key: "muster-history", icon: "people", title: "Цуглааны түүх", count: musters.length, body: musterTable })}`;
 }
 
 function peopleTab() {
   const d = m.data;
   const rules = d.skills.rules;
+  const query = (m.query.staff || "").trim().toLowerCase();
   const rows = staffUsers()
+    .filter((user) => !m.filter.staff || (m.filter.staff === "held") === Boolean((d.holds[user.id] || []).length))
     .map((user) => {
       const holds = d.holds[user.id] || [];
       const fatigue = d.fatigue[user.id];
       const certs = d.skills.certs.filter((item) => item.uid === user.id);
       const states = certs.map((item) => expiryState(item.expires, d.today).state);
       const exam = d.skills.medicals.filter((item) => item.uid === user.id).sort((a, b) => b.date.localeCompare(a.date))[0];
-      return `<tr>
+      const search = `${user.displayName} ${user.card.idNumber} ${POSITIONS[positionOf(user.id)] || ""}`.toLowerCase();
+      return `<tr data-search="${esc(search)}"${query && !search.includes(query) ? " hidden" : ""}>
         <td><b>${esc(user.displayName)}</b><small class="staff-sub">${esc(user.card.idNumber)}${positionOf(user.id) ? ` · ${esc(POSITIONS[positionOf(user.id)])}` : ""}</small></td>
         <td>${holds.length ? holds.map((text) => badge(text, "bad")).join(" ") : badge("Нэвтрэх эрхтэй", "ok")}</td>
         <td>${badge(fatigue?.label || "–", { unfit: "bad", caution: "warn", fit: "ok" }[fatigue?.state] || "")}<small class="staff-sub">${esc(fatigue?.reasons.join(", ") || "")}</small></td>
@@ -1298,23 +1471,23 @@ function peopleTab() {
       </tr>`;
     })
     .join("");
-  return `<section class="panel m-panel">
-      <div class="m-panel-head"><h2>Картын автомат хориг</h2></div>
-      <form class="m-form" data-mform="settings">
+  const heldCount = staffUsers().filter((user) => (d.holds[user.id] || []).length).length;
+  const chosen = m.filter.staff || "";
+  const chip = (value, label, count) => `<button type="button" class="m-chip${chosen === value ? " is-on" : ""}" data-m="filter" data-key="staff" data-value="${value}">${esc(label)}<i>${count}</i></button>`;
+  const settings = `<form class="m-form" data-mform="settings">
         <div class="m-form-grid">
-          <label class="m-field m-check"><input type="checkbox" name="enforce"${rules.enforce ? " checked" : ""} /> <span>Шаардлага хангаагүй бол White Queen-д ирц бүртгүүлэхийг хориглох</span></label>
-          <label class="m-field m-check"><input type="checkbox" name="medical"${rules.medical ? " checked" : ""} /> <span>Эрүүл мэндийн үзлэгийн хугацааг шалгах</span></label>
-          <label class="m-field"><span>Согтуурал эерэг гарвал хаах (цаг)</span><input type="number" name="alcoholHours" min="0" max="72" value="${rules.alcoholHours}" /></label>
+          <label class="m-field m-check"><input type="checkbox" name="enforce"${rules.enforce ? " checked" : ""} /> <span>Ирц хориглох</span></label>
+          <label class="m-field m-check"><input type="checkbox" name="medical"${rules.medical ? " checked" : ""} /> <span>Эрүүл мэндийн үзлэг шалгах</span></label>
+          <label class="m-field"><span>Согтуурал · хориг, цаг</span><input type="number" name="alcoholHours" min="0" max="72" value="${rules.alcoholHours}" /></label>
           <div class="m-field is-wide"><span>Заавал байх гэрчилгээ</span><div class="m-checks">${Object.entries(CERT_TYPES).map(([key, label]) => `<label><input type="checkbox" name="required" value="${key}"${rules.required.includes(key) ? " checked" : ""} /> ${esc(label)}</label>`).join("")}</div></div>
         </div>
         <div class="modal-actions"><button class="primary" type="submit">${ico("check")}Хадгалах</button></div>
-      </form>
-      <p class="muted m-note">Амралтын үеийн түдгэлзүүлэлттэй адил: хугацаа дууссан гэрчилгээ, үзлэг, эерэг шалгалттай ажилтны карт ирц бүртгэхэд татгалзагдана (гарах бүртгэлийг хаахгүй). Шалтгааныг станц болон ажилтны апп-д харуулна.</p>
-    </section>
-    <section class="panel m-panel">
-      <div class="m-panel-head"><h2>Ажилтан бүрийн байдал <small>${staffUsers().length}</small></h2></div>
-      <div class="m-scroll"><table class="user-table m-table"><thead><tr><th>Ажилтан</th><th>Нэвтрэх эрх</th><th>Ядаргаа</th><th>Гэрчилгээ</th><th>Дараагийн үзлэг</th></tr></thead><tbody>${rows || `<tr><td colspan="5" class="muted">Ажилтан алга</td></tr>`}</tbody></table></div>
-    </section>`;
+      </form>`;
+  const table = `<div class="m-chips">${ico("sliders")}${chip("", "Бүгд", staffUsers().length)}${chip("held", "Хоригтой", heldCount)}${chip("ok", "Нэвтрэх эрхтэй", staffUsers().length - heldCount)}</div>
+      <div class="m-scroll"><table class="m-table"><thead><tr><th>Ажилтан</th><th>Нэвтрэх эрх</th><th>Ядаргаа</th><th>Гэрчилгээ</th><th>Дараагийн үзлэг</th></tr></thead><tbody>${rows || `<tr><td colspan="5" class="m-empty">${ico("people")}<span>Ажилтан алга</span></td></tr>`}</tbody></table></div>`;
+  const search = `<label class="m-searchbox">${ico("search")}<input type="search" class="m-search" data-mq="staff" value="${esc(m.query.staff || "")}" placeholder="Хайх" aria-label="Ажилтан хайх" /></label>`;
+  return `${panel({ key: "hold-rules", icon: "cog", title: "Картын автомат хориг", tools: badge(rules.enforce ? "Асаалттай" : "Унтраалттай", rules.enforce ? "ok" : ""), body: settings })}
+    ${panel({ key: "staff", icon: "people", title: "Ажилтан бүрийн байдал", count: staffUsers().length, tools: search, body: table })}`;
 }
 
 function boardTab() {
@@ -1322,9 +1495,9 @@ function boardTab() {
   const assigns = d.ops.assigns.filter((item) => item.date === d.shiftDate && item.shift === d.shift);
   const lowStock = d.ops.stock.filter((item) => item.qty <= item.min);
   return `${kpiPanel()}${fleetPanel()}
-    ${collectionPanel("assigns", { title: `Энэ ээлжийн хуваарилалт · ${fmtDate(d.shiftDate)} ${SHIFTS[d.shift]}`, filter: (item) => assigns.includes(item) })}
-    ${collectionPanel("workorders", { title: "Нээлттэй засвар", filter: (item) => item.status !== "done" })}
-    ${lowStock.length ? collectionPanel("stock", { title: "Доод үлдэгдлээс бага бараа", filter: (item) => item.qty <= item.min }) : ""}`;
+    ${collectionPanel("assigns", { key: "board-assigns", title: `Энэ ээлжийн хуваарилалт · ${fmtDate(d.shiftDate)} ${SHIFTS[d.shift]}`, filter: (item) => assigns.includes(item) })}
+    ${collectionPanel("workorders", { key: "board-wo", title: "Нээлттэй засвар", filter: (item) => item.status !== "done" })}
+    ${lowStock.length ? collectionPanel("stock", { key: "board-stock", title: "Дутагдаж буй бараа", filter: (item) => item.qty <= item.min }) : ""}`;
 }
 
 function roomsTab() {
@@ -1334,18 +1507,22 @@ function roomsTab() {
   const waiting = staff.filter((user) => d.plans[user.id] && needsBed(d.plans[user.id], d.leaves, user.id, d.today) && !placed.has(user.id));
   const rooms = [...d.camp.rooms].sort((a, b) => `${a.block}${a.number}`.localeCompare(`${b.block}${b.number}`, "mn", { numeric: true }));
   const choices = (current) => options(staff.map((user) => [user.id, user.displayName]).sort((a, b) => a[1].localeCompare(b[1], "mn")), current, "— сул —");
-  return `<section class="panel m-panel">
-      <div class="m-panel-head"><h2>Орны хуваарилалт <small>${placed.size} хүн байрласан</small></h2>
-        <div class="m-tools"><button class="primary" type="button" data-m="beds-auto">${ico("refresh")}Ротацаар автоматаар хуваарилах</button></div></div>
-      ${waiting.length ? `<p class="m-note">${badge(`${waiting.length} хүн оргүй`, "warn")} ${esc(waiting.map((user) => user.displayName).join(", "))}</p>` : ""}
+  const blocks = [...new Set(rooms.map((room) => room.block))];
+  const chosen = m.filter.rooms || "";
+  const chip = (value, label, count) => `<button type="button" class="m-chip${chosen === value ? " is-on" : ""}" data-m="filter" data-key="rooms" data-value="${esc(value)}">${esc(label)}<i>${count}</i></button>`;
+  const chips = blocks.length > 1 ? `<div class="m-chips">${ico("sliders")}${chip("", "Бүгд", rooms.length)}${blocks.map((block) => chip(block, `${block} байр`, rooms.filter((room) => room.block === block).length)).join("")}</div>` : "";
+  const body = `${waiting.length ? `<div class="m-alert is-warn">${ico("bed")}<b>${waiting.length} хүн оргүй</b><span>${esc(waiting.map((user) => user.displayName).join(", "))}</span></div>` : ""}
+      ${chips}
       <div class="m-rooms">${rooms
-        .map(
-          (room) => `<div class="m-room"><b>${esc(room.number)}</b><small>${esc(room.block)} байр${room.note ? ` · ${esc(room.note)}` : ""}</small>
-          ${Array.from({ length: room.beds }, (_, index) => `<label class="m-bed">${ico("bed")}<select data-mchange="bed" data-room="${room.id}" data-index="${index}" aria-label="${esc(room.number)} · ${index + 1}-р ор">${choices(d.camp.beds[`${room.id}:${index}`])}</select></label>`).join("")}</div>`,
-        )
-        .join("")}</div>
-      <p class="muted m-note">Автомат хуваарилалт ажилтны 14/14, 7/7 ротацыг харж өнөөдөр болон маргааш ажиллах хүмүүст ор олгож, амралтад гарсан хүмүүсийн орыг чөлөөлнө.</p>
-    </section>
+        .filter((room) => !chosen || room.block === chosen)
+        .map((room) => {
+          const used = Array.from({ length: room.beds }, (_, index) => d.camp.beds[`${room.id}:${index}`]).filter(Boolean).length;
+          return `<div class="m-room"><div class="m-room-head"><b>${esc(room.number)}</b>${badge(`${used}/${room.beds}`, used === room.beds ? "info" : used ? "" : "ok")}</div><small>${esc(room.block)} байр${room.note ? ` · ${esc(room.note)}` : ""}</small>
+          ${Array.from({ length: room.beds }, (_, index) => `<label class="m-bed">${ico("bed")}<select data-mchange="bed" data-room="${room.id}" data-index="${index}" aria-label="${esc(room.number)} · ${index + 1}-р ор">${choices(d.camp.beds[`${room.id}:${index}`])}</select></label>`).join("")}</div>`;
+        })
+        .join("")}</div>`;
+  const tools = `<button class="primary" type="button" data-m="beds-auto">${ico("refresh")}<span>Автомат</span></button>`;
+  return `${panel({ key: "beds", icon: "bed", title: "Орны хуваарилалт", count: placed.size, tools, body })}
     ${collectionPanel("rooms")}`;
 }
 
@@ -1362,11 +1539,8 @@ function transportTab() {
         <td>${trips.map((item) => `<button class="chip" type="button" data-m="manifest" data-id="${item.id}">${item.dir === "in" ? "↓" : "↑"} ${esc(item.ref || item.vehicle)} ${esc(item.depart || "")} · ${manifest(item).length}</button>`).join(" ") || `<button class="chip" type="button" data-m="new" data-name="transport" data-preset='${esc(JSON.stringify({ date }))}'>${ico("add")}Тээвэр</button>`}</td></tr>`;
     })
     .join("");
-  return `<section class="panel m-panel">
-      <div class="m-panel-head"><h2>Ээлж солих хуваарь <small>7 хоног · ротацаас</small></h2></div>
-      <div class="m-scroll"><table class="user-table m-table"><thead><tr><th>Огноо</th><th>Ирэх</th><th>Буцах</th><th>Тээвэр</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="muted m-note">Автобусны зорчигчийн жагсаалт ротацаар автоматаар бүрдэнэ; нислэг, нэмэлт зорчигчийг тээврийн бүртгэлд гараар нэмнэ.</p>
-    </section>
+  const body = `<div class="m-scroll"><table class="m-table"><thead><tr><th>${ico("calendar", "m-ico tiny")} Огноо</th><th>↓ Ирэх</th><th>↑ Буцах</th><th>${ico("bus", "m-ico tiny")} Тээвэр</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `${panel({ key: "crew-change", icon: "swap", title: "Ээлж солих · 7 хоног", body })}
     ${collectionPanel("transport")}`;
 }
 
@@ -1376,20 +1550,33 @@ function payrollTab() {
   if (!data) loadPayroll(month);
   const rows = data?.rows || [];
   const total = (key) => Math.round(rows.reduce((sum, row) => sum + (row[key] || 0), 0) * 10) / 10;
-  return `<section class="panel m-panel">
-    <div class="m-panel-head"><h2>Цалингийн тайлан <small>ирцийн бүртгэлээс</small></h2>
-      <div class="m-tools"><input type="month" data-mchange="paymonth" value="${month}" aria-label="Сар" /><button class="icon-btn" type="button" data-m="payroll-csv" title="CSV татах" aria-label="CSV татах"${rows.length ? "" : " disabled"}>${ico("download")}</button></div></div>
-    <div class="m-scroll"><table class="user-table m-table">
+  const tools = `<label class="m-searchbox">${ico("calendar")}<input type="month" data-mchange="paymonth" value="${month}" aria-label="Сар" /></label><label class="m-searchbox">${ico("search")}<input type="search" class="m-search" data-mq="payroll" value="${esc(m.query.payroll || "")}" placeholder="Хайх" aria-label="Хайх" /></label><button class="icon-btn" type="button" data-m="payroll-csv" title="CSV татах" aria-label="CSV татах"${rows.length ? "" : " disabled"}>${ico("download")}</button>`;
+  const query = (m.query.payroll || "").trim().toLowerCase();
+  const stats = data
+    ? `<div class="m-kpis">
+        <div class="m-kpi">${ico("people")}<b>${rows.length}</b><span>Ажилтан</span></div>
+        <div class="m-kpi">${ico("clock")}<b>${num(total("hours"))}</b><span>Нийт цаг</span></div>
+        <div class="m-kpi">${ico("moon")}<b>${num(total("nightHours"))}</b><span>Шөнийн цаг</span></div>
+        <div class="m-kpi${total("overtime") ? " is-warn" : ""}">${ico("alert")}<b>${num(total("overtime"))}</b><span>Илүү цаг</span></div>
+        <div class="m-kpi">${ico("mine")}<b>${num(total("fieldDays"))}</b><span>Хээрийн өдөр</span></div>
+      </div>`
+    : "";
+  return panel({
+    key: "payroll",
+    icon: "wallet",
+    title: "Цалингийн тайлан",
+    count: rows.length,
+    tools,
+    body: `${stats}<div class="m-scroll"><table class="m-table">
       <thead><tr><th>Ажилтан</th><th>ID</th><th>Ажилласан өдөр</th><th>Өдөр / шөнө</th><th>Нийт цаг</th><th>Шөнийн цаг (22–06)</th><th>Илүү цаг (&gt;12ц)</th><th>Хээрийн өдөр</th><th>Чөлөө</th><th>Тасалсан</th><th>Хоцорсон</th></tr></thead>
       <tbody>${
         data
-          ? rows.map((row) => `<tr><td><b>${esc(row.name)}</b><small class="staff-sub">${esc(row.title)}</small></td><td class="mono">${esc(row.idNumber)}</td><td>${row.workedDays}</td><td>${row.dayShifts} / ${row.nightShifts}</td><td>${row.hours}</td><td>${row.nightHours}</td><td>${row.overtime ? badge(String(row.overtime), "warn") : 0}</td><td>${row.fieldDays}</td><td>${row.leave}</td><td>${row.absent ? badge(String(row.absent), "bad") : 0}</td><td>${row.late}</td></tr>`).join("") +
+          ? rows.map((row) => `<tr data-search="${esc(`${row.name} ${row.idNumber} ${row.title || ""}`.toLowerCase())}"${query && !`${row.name} ${row.idNumber} ${row.title || ""}`.toLowerCase().includes(query) ? " hidden" : ""}><td><b>${esc(row.name)}</b><small class="staff-sub">${esc(row.title)}</small></td><td class="mono">${esc(row.idNumber)}</td><td>${row.workedDays}</td><td>${row.dayShifts} / ${row.nightShifts}</td><td>${row.hours}</td><td>${row.nightHours}</td><td>${row.overtime ? badge(String(row.overtime), "warn") : 0}</td><td>${row.fieldDays}</td><td>${row.leave}</td><td>${row.absent ? badge(String(row.absent), "bad") : 0}</td><td>${row.late}</td></tr>`).join("") +
             `<tr class="m-total"><td colspan="4"><b>Нийт</b></td><td><b>${total("hours")}</b></td><td><b>${total("nightHours")}</b></td><td><b>${total("overtime")}</b></td><td><b>${total("fieldDays")}</b></td><td colspan="3"></td></tr>`
-          : `<tr><td colspan="11" class="muted">Ачаалж байна…</td></tr>`
+          : `<tr><td colspan="11" class="m-empty">${ico("clock")}<span>Ачаалж байна…</span></td></tr>`
       }</tbody>
-    </table></div>
-    <p class="muted m-note">Нийт цаг, шөнийн цаг, илүү цаг, хээрийн нэмэгдлийн өдрийг White Queen-ий ирцээс тооцно. CSV-г цалингийн програм руу шууд оруулж болно.</p>
-  </section>`;
+    </table></div>`,
+  });
 }
 
 async function loadPayroll(month) {
@@ -1407,12 +1594,53 @@ async function loadPayroll(month) {
 
 /* ---------- events ---------- */
 
+function toggleRow(row) {
+  const id = row.dataset.row;
+  const open = !m.open.has(id);
+  if (open) m.open.add(id);
+  else m.open.delete(id);
+  row.classList.toggle("is-open", open);
+  row.querySelector(".m-row-toggle")?.setAttribute("aria-expanded", String(open));
+  const detail = row.nextElementSibling;
+  if (detail?.classList.contains("m-detail")) detail.hidden = !open;
+}
+
+function setFolded(section, folded) {
+  section.classList.toggle("is-folded", folded);
+  section.querySelector(".m-fold")?.setAttribute("aria-expanded", String(!folded));
+  if (folded) m.fold.add(section.dataset.foldKey);
+  else m.fold.delete(section.dataset.foldKey);
+}
+
+const saveFold = () => localStorage.setItem("mine-fold", JSON.stringify([...m.fold]));
+
 async function onClick(event) {
   const button = event.target.closest("[data-m]");
-  if (!button) return;
+  if (!button) {
+    const row = event.target.closest("tr.m-row.has-detail");
+    if (row && !event.target.closest("a, button, input, select, label, textarea")) toggleRow(row);
+    return;
+  }
   const { m: action, name, id } = button.dataset;
   if (action.startsWith("w-")) return workerClick(button);
   if (!m.data) return;
+  if (action === "fold") {
+    const section = button.closest("[data-fold-key]");
+    setFolded(section, !section.classList.contains("is-folded"));
+    saveFold();
+  }
+  if (action === "fold-all") {
+    const sections = [...ctx.stage.querySelectorAll("[data-fold-key]")];
+    const fold = sections.some((section) => !section.classList.contains("is-folded"));
+    for (const section of sections) setFolded(section, fold);
+    saveFold();
+    button.innerHTML = ico(fold ? "unfold" : "fold");
+  }
+  if (action === "row") toggleRow(button.closest("tr.m-row"));
+  if (action === "filter") {
+    m.filter[button.dataset.key] = button.dataset.value;
+    paint(true);
+  }
   if (action === "tab") {
     m.tab[button.dataset.page] = button.dataset.tab;
     localStorage.setItem("mine-tabs", JSON.stringify(m.tab));
@@ -1494,7 +1722,11 @@ function onInput(event) {
   if (!input) return;
   const query = input.value.trim().toLowerCase();
   m.query[input.dataset.mq] = query;
-  for (const row of input.closest(".m-panel").querySelectorAll("tbody tr[data-search]")) row.hidden = Boolean(query) && !row.dataset.search.includes(query);
+  for (const row of input.closest(".m-panel").querySelectorAll("tbody tr[data-search]")) {
+    row.hidden = Boolean(query) && !row.dataset.search.includes(query);
+    const detail = row.nextElementSibling;
+    if (detail?.classList.contains("m-detail")) detail.hidden = row.hidden || !m.open.has(row.dataset.row);
+  }
 }
 
 /* ---------- worker safety strip ---------- */
