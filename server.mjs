@@ -80,6 +80,7 @@ import {
   workerMine,
 } from "./lib/mine.mjs";
 import { seedMine } from "./lib/mineseed.mjs";
+import { FLEET_ROLES, fleetView, fleetWorkorder, seedFleet, setDispatch } from "./lib/fleet.mjs";
 import { COLLECTIONS, payrollRows } from "./public/js/minecore.js";
 import { applyRestUpdate, cleanPlan, ensureWorkplan, patternsFor, restBlock, restUpdates, leaveRequest, noteAttempt, pruneLeaves } from "./lib/workplan.mjs";
 import { faceOf, faceProgress, frameBuffer, photoFace, warmFace } from "./lib/face.mjs";
@@ -1992,6 +1993,32 @@ const MASTER_ACTIONS = [
   [/^\/api\/master\/wx-sim$/, (db, body, me, now) => setWxSim(db, body, now)],
 ];
 
+const FLEET_ACTIONS = {
+  "/api/fleet/dispatch": (db, body) => setDispatch(db, body.truck, body.digger || null),
+  "/api/fleet/workorders": (db, body, me, now) => fleetWorkorder(db, body, me.id, now),
+};
+
+async function routeFleet(req, res, url, me) {
+  const now = Date.now();
+  if (req.method === "GET" && url.pathname === "/api/fleet") {
+    json(res, 200, await inspect((db) => fleetView(db, now)));
+    return;
+  }
+  const action = req.method === "POST" && FLEET_ACTIONS[url.pathname];
+  if (!action) {
+    json(res, 404, { error: "Олдсонгүй" });
+    return;
+  }
+  const body = await readBody(req);
+  const result = await update((db) => {
+    const outcome = action(db, body, me, now);
+    if (outcome.error) return outcome;
+    if (mineDue(db, now)) mineTick(db, now);
+    return { ok: true, view: fleetView(db, now) };
+  });
+  json(res, result.error ? result.status || 400 : 200, result);
+}
+
 async function routeMaster(req, res, url, me) {
   const now = Date.now();
   const { pathname } = url;
@@ -2181,6 +2208,14 @@ async function routeApi(req, res, url) {
         return;
       }
       await routeMaster(req, res, url, me);
+      return;
+    }
+    if (url.pathname === "/api/fleet" || url.pathname.startsWith("/api/fleet/")) {
+      if (!FLEET_ROLES.includes(me.role)) {
+        json(res, 403, { error: "Зөвхөн уулын ахлах инженерт зориулсан" });
+        return;
+      }
+      await routeFleet(req, res, url, me);
       return;
     }
     if (url.pathname.startsWith("/api/mine/")) {
@@ -2679,6 +2714,8 @@ update((db) => {
   ensureMine(db);
   const mine = seedMine(db);
   if (mine) console.log(`Уурхайн туршилтын өгөгдөл: ${mine.records} бүртгэл${mine.errors.length ? ` · алгассан: ${mine.errors.slice(0, 3).join("; ")}` : ""}`);
+  const fleet = seedFleet(db);
+  if (fleet?.added) console.log(`Уурхайн техникийн самбар: ${fleet.added} нэмэлт техник`);
 })
   .then(() => update((db) => ensureFresh(db, true)))
   .catch((error) => console.error(error.message))
