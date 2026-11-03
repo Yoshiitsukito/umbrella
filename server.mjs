@@ -82,6 +82,9 @@ import {
 import { seedMine } from "./lib/mineseed.mjs";
 import { FLEET_ROLES, fleetView, fleetWorkorder, seedFleet, setDispatch } from "./lib/fleet.mjs";
 import { CAMP_COLLECTIONS, CAMP_ROLE, campView, seedCamp } from "./lib/camp.mjs";
+import { GUARD_COLLECTIONS, GUARD_ROLE, decideViolation, guardView } from "./lib/guard.mjs";
+import { cancelPass, decidePass, gatePass, ownPasses, passInbox, passesView, requestPass } from "./lib/passes.mjs";
+import { PASS_ROLES } from "./public/js/passcore.js";
 import { COLLECTIONS, payrollRows } from "./public/js/minecore.js";
 import { applyRestUpdate, cleanPlan, ensureWorkplan, patternsFor, restBlock, restUpdates, leaveRequest, noteAttempt, pruneLeaves } from "./lib/workplan.mjs";
 import { faceOf, faceProgress, frameBuffer, photoFace, warmFace } from "./lib/face.mjs";
@@ -739,6 +742,7 @@ function profileOf(db, uid) {
 
 function view(db, uid = db.profile.id) {
   const today = localParts().date;
+  const role = db.users.find((item) => item.id === uid)?.role;
   return {
     ...personalView(db, uid),
     profile: profileOf(db, uid),
@@ -751,6 +755,8 @@ function view(db, uid = db.profile.id) {
     trackAt: db.attendance.resetAt || null,
     shiftPlan: db.shiftPlans?.[uid] || null,
     leaves: (db.leaves || []).filter((item) => item.uid === uid),
+    passes: STAFF_ROLES.includes(role) ? ownPasses(db, uid) : [],
+    passInbox: PASS_ROLES.includes(role) ? passInbox(db, role) : 0,
     cardAttempts: (db.cardAttempts || []).filter((item) => item.uid === uid && Date.now() - Date.parse(item.at) < 14 * 24 * 3600 * 1000),
     briefing: db.briefings.find((item) => item.localDate === today) || null,
     weather: clientWeather(db.weather),
@@ -1087,7 +1093,7 @@ async function routeAuth(req, res, url) {
   json(res, 404, { error: "Олдсонгүй" });
 }
 
-const NOTICE_TITLE = { plan: "Ээлжийн хуваарь", leave: "Чөлөөний хүсэлт", card: "ID карт", hse: "ХАБЭА" };
+const NOTICE_TITLE = { plan: "Ээлжийн хуваарь", leave: "Чөлөөний хүсэлт", "leave-ok": "Чөлөөний хүсэлт", "leave-no": "Чөлөөний хүсэлт", card: "ID карт", hse: "ХАБЭА", "pass-ok": "Хөдөлгөөний зөвшөөрөл", "pass-no": "Хөдөлгөөний зөвшөөрөл" };
 
 /** What the phone app's background service needs: sleep-button times, today's steps and new messages. */
 function mobileState(db, uid, now = Date.now()) {
@@ -1990,6 +1996,7 @@ const MASTER_ACTIONS = [
   [/^\/api\/master\/visitors\/([\w-]+)\/site$/, (db, body, me, now, m) => setVisitorSite(db, m[1], body.on, now)],
   [/^\/api\/master\/settings$/, (db, body) => saveSettings(db, body)],
   [/^\/api\/master\/wx-sim$/, (db, body, me, now) => setWxSim(db, body, now)],
+  [/^\/api\/master\/violations\/([\w-]+)\/decide$/, (db, body, me, now, m) => decideViolation(db, m[1], body, me, now)],
 ];
 
 const FLEET_ACTIONS = {
@@ -2098,6 +2105,88 @@ async function routeCamp(req, res, url, me) {
   json(res, result.error ? result.status || 400 : 200, result);
 }
 
+/** Sends a stored evidence photo, when `owns` says the id belongs to this role's records. */
+async function sendPhoto(res, id, owns) {
+  const data = (await inspect((db) => (owns(db, id) ? photoOf(db, id) : null)))?.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+  if (!data) {
+    json(res, 404, { error: "Зураг олдсонгүй" });
+    return;
+  }
+  res.writeHead(200, { "Content-Type": data[1], "Cache-Control": "private, max-age=3600" });
+  res.end(Buffer.from(data[2], "base64"));
+}
+
+async function routeGuard(req, res, url, me) {
+  const now = Date.now();
+  const { pathname } = url;
+  if (req.method === "GET" && pathname === "/api/guard") {
+    json(res, 200, await inspect((db) => guardView(db, now)));
+    return;
+  }
+  const photo = pathname.match(/^\/api\/guard\/photo\/([\w-]+)$/);
+  if (req.method === "GET" && photo) {
+    await sendPhoto(res, photo[1], (db, id) => (db.guard?.violations || []).some((item) => item.id === id));
+    return;
+  }
+  if (await routeRecords(req, res, me, "/api/guard", pathname, (name) => GUARD_COLLECTIONS.includes(name), guardView)) return;
+  json(res, 404, { error: "Олдсонгүй" });
+}
+
+/**
+ * Movement permits. Shift workers file and withdraw their own; HR and the chief engineer decide the kinds they
+ * approve, security records the gate, and the camp manager reads. Each answers with the caller's refreshed view.
+ */
+async function routePasses(req, res, url, me) {
+  const now = Date.now();
+  const { pathname } = url;
+  const reply = (result) => json(res, result.error ? result.status || 400 : 200, result);
+  if (req.method === "POST" && pathname === "/api/passes") {
+    const body = await readBody(req);
+    reply(
+      await update((db) => {
+        const user = db.users.find((item) => item.id === me.id);
+        const result = requestPass(db, user, body, now);
+        return result.error ? result : view(db, me.id);
+      }),
+    );
+    return;
+  }
+  const own = pathname.match(/^\/api\/passes\/([\w-]+)$/);
+  if (req.method === "DELETE" && own) {
+    reply(
+      await update((db) => {
+        const result = cancelPass(db, me.id, own[1], now);
+        return result.error ? result : view(db, me.id);
+      }),
+    );
+    return;
+  }
+  if (!PASS_ROLES.includes(me.role)) {
+    json(res, 403, { error: "Хөдөлгөөний зөвшөөрлийг хүний нөөц, уулын ахлах, кэмп, хамгаалалт харна" });
+    return;
+  }
+  if (req.method === "GET" && pathname === "/api/passes") {
+    json(res, 200, await inspect((db) => passesView(db, me.role, now)));
+    return;
+  }
+  const act = pathname.match(/^\/api\/passes\/([\w-]+)\/(decide|gate)$/);
+  if (req.method !== "POST" || !act) {
+    json(res, 404, { error: "Олдсонгүй" });
+    return;
+  }
+  const body = await readBody(req);
+  if (act[2] === "gate" && me.role !== GUARD_ROLE) {
+    json(res, 403, { error: "Хаалганы бүртгэлийг хамгаалалт хийнэ" });
+    return;
+  }
+  reply(
+    await update((db) => {
+      const result = act[2] === "decide" ? decidePass(db, act[1], { role: me.role, me, ok: body.ok === true, note: body.note, now }) : gatePass(db, act[1], { step: body.step, me, now });
+      return result.error ? result : { ok: true, view: passesView(db, me.role, now) };
+    }),
+  );
+}
+
 async function routeMaster(req, res, url, me) {
   const now = Date.now();
   const { pathname } = url;
@@ -2108,16 +2197,10 @@ async function routeMaster(req, res, url, me) {
   }
   const photo = pathname.match(/^\/api\/master\/photo\/([\w-]+)$/);
   if (req.method === "GET" && photo) {
-    const data = (await inspect((db) => photoOf(db, photo[1])))?.match(/^data:(image\/[a-z]+);base64,(.+)$/);
-    if (!data) {
-      json(res, 404, { error: "Зураг олдсонгүй" });
-      return;
-    }
-    res.writeHead(200, { "Content-Type": data[1], "Cache-Control": "private, max-age=3600" });
-    res.end(Buffer.from(data[2], "base64"));
+    await sendPhoto(res, photo[1], () => true);
     return;
   }
-  if (await routeRecords(req, res, me, "/api/master", pathname, (name) => !CAMP_COLLECTIONS.includes(name), masterView)) return;
+  if (await routeRecords(req, res, me, "/api/master", pathname, (name) => !CAMP_COLLECTIONS.includes(name) && !GUARD_COLLECTIONS.includes(name), masterView)) return;
   if (req.method === "POST") {
     for (const [pattern, action] of MASTER_ACTIONS) {
       const match = pathname.match(pattern);
@@ -2257,6 +2340,18 @@ async function routeApi(req, res, url) {
         return;
       }
       await routeCamp(req, res, url, me);
+      return;
+    }
+    if (url.pathname === "/api/guard" || url.pathname.startsWith("/api/guard/")) {
+      if (me.role !== GUARD_ROLE) {
+        json(res, 403, { error: "Зөвхөн хамгаалалтын хэсэгт зориулсан" });
+        return;
+      }
+      await routeGuard(req, res, url, me);
+      return;
+    }
+    if (url.pathname === "/api/passes" || url.pathname.startsWith("/api/passes/")) {
+      await routePasses(req, res, url, me);
       return;
     }
     if (url.pathname === "/api/fleet" || url.pathname.startsWith("/api/fleet/")) {

@@ -1,4 +1,4 @@
-// Mine-site records (safety, competency, operations, camp) shared by the server and the MASTER pages:
+// Mine-site records (safety, competency, operations, camp, security) shared by the server and the MASTER pages:
 // the schema every record is checked against, and the pure arithmetic built on top of it.
 import { addDays, isRotation, leaveOn, periodSummary, plannedKind, sessionsOf, shiftDateOf } from "./workstats.js";
 
@@ -101,6 +101,22 @@ export const CAMERA_KINDS = {
 };
 /** Camera kinds that play from an address; the browser reaches it directly, so it must be http(s). */
 export const CAMERA_URL_KINDS = ["mjpeg", "snapshot", "video", "embed"];
+export const VIOLATORS = { staff: "Ажилтан", contractor: "Гэрээт ажилтан", visitor: "Зочин", other: "Бусад" };
+export const VIOLATION_KINDS = {
+  ppe: "ХХХ хэрэглээгүй",
+  alcohol: "Согтууруулах ундаа",
+  zone: "Зөвшөөрөлгүй бүсэд нэвтэрсэн",
+  pass: "Зөвшөөрөлгүй гарсан, орсон",
+  card: "Бусдын картаар нэвтэрсэн",
+  speed: "Хурд, хөдөлгөөний дүрэм",
+  smoking: "Тамхи, гал",
+  property: "Эд хөрөнгө авч гарах",
+  conduct: "Зохисгүй үйлдэл",
+  other: "Бусад",
+};
+/** The security officer's report is "new" until HSE takes it up and decides. */
+export const VIOLATION_STATUS = { new: "Шинэ", review: "ХАБЭА хянаж байна", acted: "Арга хэмжээ авсан", dismissed: "Үндэслэлгүй" };
+export const MEASURES = { warning: "Сануулга", training: "Давтан сургалт", fine: "Торгууль", suspend: "Ажлаас түр түдгэлзүүлэх", dismiss: "Ажлаас чөлөөлөх", other: "Бусад" };
 export const SOS_KINDS = { sos: "SOS товч", lone: "Ганцаар ажиллагч хариу өгөөгүй" };
 export const SOS_STATUS = { open: "Шинэ", ack: "Хүлээн авсан", resolved: "Шийдвэрлэсэн", cancelled: "Цуцалсан" };
 /** Pre-start checklist: key, label, and whether a failure takes the machine out of service. */
@@ -528,9 +544,26 @@ export const COLLECTIONS = {
       f("note", "Тэмдэглэл", "text", { max: 80 }),
     ],
   },
+  violations: {
+    area: "guard",
+    prefix: "vio",
+    keep: 500,
+    label: "Зөрчил",
+    fields: [
+      f("at", "Хэзээ", "datetime", { required: true, list: true, def: "now" }),
+      f("party", "Хэн", "select", { options: VIOLATORS, required: true, list: true, def: "staff" }),
+      f("uid", "Ажилтан", "user", { show: { party: ["staff"] } }),
+      f("person", "Нэр, байгууллага", "text", { max: 80, show: { party: ["contractor", "visitor", "other"] } }),
+      f("kind", "Зөрчил", "select", { options: VIOLATION_KINDS, required: true, list: true, def: "ppe" }),
+      f("severity", "Ноцтой байдал", "select", { options: SEVERITIES, required: true, list: true, def: "medium" }),
+      f("place", "Байршил", "text", { max: 80, list: true }),
+      f("detail", "Юу болсон", "long", { max: 1000, required: true }),
+      f("photo", "Нотлох зураг", "photo"),
+    ],
+  },
 };
 
-export const AREAS = ["hse", "skills", "ops", "camp"];
+export const AREAS = ["hse", "skills", "ops", "camp", "guard"];
 
 export function collectionsOf(area) {
   return Object.keys(COLLECTIONS).filter((name) => COLLECTIONS[name].area === area);

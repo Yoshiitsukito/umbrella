@@ -57,8 +57,10 @@ import {
   workload,
 } from "./wellstats.js";
 import { MENU_CATEGORIES, MENU_CATEGORY_LABEL, MENU_MEALS, MENU_MEAL_LABEL } from "./menulabels.js";
-import { CAMP_VIEWS, MASTER_VIEWS, initMine, masterReset, masterStart, masterStop, masterView, workerPanel } from "./master.js";
+import { CAMP_VIEWS, GUARD_VIEWS, MASTER_VIEWS, initMine, masterReset, masterStart, masterStop, masterView, workerPanel } from "./master.js";
 import { FLEET_VIEWS, fleetReset, fleetStart, fleetStop, fleetView, initFleet } from "./fleet.js";
+import { PASS_KINDS, PASS_ROLES, PASS_SHORT } from "./passcore.js";
+import { PASS_VIEWS, initPasses, passIco, passStatusBadge, passTrail, passWhen, passesReset, passesStart, passesStop, passesView } from "./passes.js";
 
 // Google Map Tiles API is not enabled on the project yet; set to true once it is.
 const TRAFFIC_ENABLED = false;
@@ -110,8 +112,8 @@ const state = {
   briefing: false,
 };
 
-const ROLE_LABEL = { admin: "Админ", hr: "Хүний нөөц", kitchen: "Гал тогоо", user: "Хэрэглэгч", whiteking: "White Queen", master: "Уурхайн мастер", engineer: "Уулын ахлах инженер", campmgr: "Кэмп менежер" };
-const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer", "campmgr"];
+const ROLE_LABEL = { admin: "Админ", hr: "Хүний нөөц", kitchen: "Гал тогоо", user: "Хэрэглэгч", whiteking: "White Queen", master: "Уурхайн мастер", engineer: "Уулын ахлах инженер", campmgr: "Кэмп менежер", security: "Хамгаалалт" };
+const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer", "campmgr", "security"];
 const STAFF_ROLES = ["user", "hr", "kitchen"];
 const ADMIN_VIEWS = ["users", "account", "card", "whiteking"];
 const HR_VIEWS = ["staff", "today"];
@@ -145,24 +147,31 @@ function isCampManager() {
   return state.me?.role === "campmgr";
 }
 
+function isSecurity() {
+  return state.me?.role === "security";
+}
+
 function homeFor() {
   if (isStation()) return "station";
   if (isMaster()) return "mine";
   if (isEngineer()) return "fleet";
   if (isCampManager()) return "camp";
+  if (isSecurity()) return "guard";
   return isAdmin() ? "users" : "home";
 }
 
 /** Views each role may open; everyone also has their profile, and HR and the kitchen keep every staff page on top of their own. */
 function viewAllowed(view) {
   if (view === "profile") return true;
+  if (PASS_VIEWS.includes(view)) return PASS_ROLES.includes(state.me?.role);
   if (isAdmin()) return ADMIN_VIEWS.includes(view);
   if (isMaster()) return MASTER_VIEWS.includes(view) || FLEET_VIEWS.includes(view);
   if (isEngineer()) return FLEET_VIEWS.includes(view);
   if (isCampManager()) return CAMP_VIEWS.includes(view);
+  if (isSecurity()) return GUARD_VIEWS.includes(view);
   if (isHr() && HR_VIEWS.includes(view)) return true;
   if (isKitchen() && KITCHEN_VIEWS.includes(view)) return true;
-  return ![...ADMIN_VIEWS, ...HR_VIEWS, ...KITCHEN_VIEWS, ...MASTER_VIEWS, ...CAMP_VIEWS, ...FLEET_VIEWS, "station"].includes(view);
+  return ![...ADMIN_VIEWS, ...HR_VIEWS, ...KITCHEN_VIEWS, ...MASTER_VIEWS, ...CAMP_VIEWS, ...GUARD_VIEWS, ...FLEET_VIEWS, "station"].includes(view);
 }
 
 /** Staff who work shifts: regular users, HR and the kitchen alike. */
@@ -221,6 +230,11 @@ function renderChrome() {
   for (const button of nav.querySelectorAll("button")) {
     button.classList.toggle("active", button.dataset.view === (state.view === "account" ? "users" : state.view));
     if (button.dataset.role) button.hidden = !button.dataset.role.split(" ").includes(role);
+  }
+  const passCount = nav.querySelector("[data-view='passes'] .nav-count");
+  if (passCount) {
+    passCount.textContent = live?.passInbox > 99 ? "99+" : String(live?.passInbox || "");
+    passCount.hidden = !live?.passInbox;
   }
   const profileButton = nav.querySelector("[data-view='profile']");
   if (profileButton && state.me) {
@@ -387,7 +401,7 @@ function ring(pct) {
   return `<div class="ring" style="--pct:${value}"><span>${value}%</span></div>`;
 }
 
-const NOTICE_ICON = { card: "warn", "leave-ok": "check", "leave-no": "cross", plan: "calendar" };
+const NOTICE_ICON = { card: "warn", "leave-ok": "check", "leave-no": "cross", plan: "calendar", "pass-ok": "check", "pass-no": "cross", hse: "warn" };
 const LATE_GRACE_MS = 5 * 60 * 1000;
 
 function agoLabel(iso) {
@@ -1159,6 +1173,60 @@ function meLeaves(ctx) {
     </section>`;
 }
 
+const PASS_HINT = {
+  exit: ["Ээлжийн дундуур уурхайн бүсээс түр гарах", "Уулын ахлах зөвшөөрнө · хамгаалалтад харагдана"],
+  arrive: ["Ээлжээсээ өмнө эсвэл хуваарьгүй өдөр ирэх", "Хүний нөөц, уулын ахлах зөвшөөрнө · кэмп, хамгаалалтад харагдана"],
+  depart: ["Ээлж дуусахаас өмнө ажлаас буух", "Хүний нөөц, уулын ахлах зөвшөөрнө · кэмп, хамгаалалтад харагдана"],
+};
+const PASS_FROM_LABEL = { exit: "Гарах цаг", arrive: "Ирэх цаг", depart: "Буух цаг" };
+
+function mePasses(live) {
+  const step = 30 * 60 * 1000;
+  const start = Math.ceil(Date.now() / step) * step;
+  const toInput = (ms) => new Date(ms + 8 * 3600 * 1000).toISOString().slice(0, 16);
+  const kinds = Object.keys(PASS_KINDS)
+    .map(
+      (kind, index) => `<label class="pass-kind-opt is-${kind}">
+          <input type="radio" name="kind" value="${kind}"${index === 0 ? " checked" : ""} />
+          <span>${passIco(kind)}<b>${esc(PASS_SHORT[kind])}</b><small>${esc(PASS_HINT[kind][0])}</small></span>
+        </label>`,
+    )
+    .join("");
+  const only = (kind, html) => `<span data-pass-only="${kind}">${html}</span>`;
+  const list = (live.passes || [])
+    .slice(0, 12)
+    .map((pass, index) => {
+      const cancel = pass.status === "pending" && !Object.keys(pass.decisions || {}).length;
+      return `<li class="pass-item is-${pass.status} row-in" style="--i:${index}">
+          <span class="ps-kind is-${pass.kind}">${passIco(pass.kind)}${esc(PASS_SHORT[pass.kind])}</span>
+          <div class="pass-main"><b>${esc(passWhen(pass))}</b><small>${esc(pass.reason)}${pass.place ? ` · ${esc(pass.place)}` : ""}</small>${passTrail(pass)}</div>
+          <div class="pass-side">${passStatusBadge(pass)}${cancel ? `<button class="icon-btn" type="button" data-action="pass-cancel" data-id="${esc(pass.id)}" aria-label="Хүсэлт цуцлах" title="Цуцлах">${adminIcon("trash")}</button>` : ""}</div>
+        </li>`;
+    })
+    .join("");
+  return `
+    <section class="panel me-passes">
+      <header class="pass-head">
+        <h2>Хөдөлгөөний зөвшөөрөл</h2>
+        <p class="muted">Бүсээс гарах, ээлжийн бусаар ирэх, буух бүрт зөвшөөрөл авна. Хамгаалалт хаалган дээр шалгана.</p>
+      </header>
+      <form class="pass-form" data-form="pass">
+        <fieldset class="pass-kinds"><legend class="sr-only">Хүсэлтийн төрөл</legend>${kinds}</fieldset>
+        <div class="pass-fields">
+          <label>${Object.keys(PASS_KINDS).map((kind) => only(kind, PASS_FROM_LABEL[kind])).join("")}<input type="datetime-local" name="from" value="${toInput(start)}" min="${toInput(Date.now() - 3600 * 1000)}" required /></label>
+          <label data-pass-only="exit">Буцаж ирэх цаг<input type="datetime-local" name="until" value="${toInput(start + 4 * 3600 * 1000)}" /></label>
+          <label data-pass-only="exit">Очих газар<input name="place" maxlength="80" placeholder="Жишээ нь: сум, эмнэлэг" autocomplete="off" /></label>
+          <label class="pass-reason">Шалтгаан<input name="reason" maxlength="200" minlength="3" placeholder="Яагаад шаардлагатай вэ" autocomplete="off" required /></label>
+        </div>
+        <div class="pass-submit">
+          <p class="pass-route">${Object.keys(PASS_KINDS).map((kind) => only(kind, `${adminIcon("today")}${esc(PASS_HINT[kind][1])}`)).join("")}</p>
+          <button class="primary" type="submit">Хүсэлт илгээх</button>
+        </div>
+      </form>
+      <ul class="pass-list">${list || `<li class="muted">Хүсэлт байхгүй.</li>`}</ul>
+    </section>`;
+}
+
 function meHistory(live) {
   const events = live.events || [];
   const list = events.length
@@ -1187,6 +1255,7 @@ function attendanceView() {
       ${meAlerts(live)}
       ${meSummary(ctx)}
       <div class="me-grid">${mePlan(ctx)}${meLeaves(ctx)}</div>
+      ${mePasses(live)}
       ${meHistory(live)}
     </div>`;
 }
@@ -1198,6 +1267,7 @@ function attendanceSignature(live) {
     live?.events?.length,
     live?.events?.at(-1)?.at,
     live?.leaves?.map((item) => item.status),
+    live?.passes?.map((item) => `${item.id}:${item.status}:${Object.keys(item.decisions || {}).length}:${Object.keys(item.gate || {}).length}`),
     live?.cardAttempts?.length,
     live?.shiftPlan,
   ]);
@@ -2191,7 +2261,7 @@ function flipHint() {
 }
 
 function roleBadge(role) {
-  return `<span class="role-badge${role === "admin" ? " is-admin" : role === "whiteking" ? " is-wk" : role === "hr" ? " is-hr" : role === "kitchen" ? " is-kitchen" : role === "master" ? " is-master" : role === "engineer" ? " is-engineer" : role === "campmgr" ? " is-campmgr" : ""}">${ROLE_LABEL[role] || role}</span>`;
+  return `<span class="role-badge${role === "admin" ? " is-admin" : role === "whiteking" ? " is-wk" : role === "hr" ? " is-hr" : role === "kitchen" ? " is-kitchen" : role === "master" ? " is-master" : role === "engineer" ? " is-engineer" : role === "campmgr" ? " is-campmgr" : role === "security" ? " is-security" : ""}">${ROLE_LABEL[role] || role}</span>`;
 }
 
 function statusBadge(status) {
@@ -5375,6 +5445,14 @@ function render() {
   state.renderedView = state.view;
   renderChrome();
   stage.classList.toggle("is-fleet", FLEET_VIEWS.includes(state.view));
+  if (PASS_VIEWS.includes(state.view)) {
+    masterStop();
+    fleetStop();
+    stage.innerHTML = passesView();
+    passesStart();
+    return;
+  }
+  passesStop();
   if (FLEET_VIEWS.includes(state.view)) {
     masterStop();
     stage.innerHTML = fleetView();
@@ -5382,7 +5460,7 @@ function render() {
     return;
   }
   fleetStop();
-  if (MASTER_VIEWS.includes(state.view) || CAMP_VIEWS.includes(state.view)) {
+  if (MASTER_VIEWS.includes(state.view) || CAMP_VIEWS.includes(state.view) || GUARD_VIEWS.includes(state.view)) {
     stage.innerHTML = masterView(state.view);
     masterStart();
     return;
@@ -5750,6 +5828,16 @@ stage.addEventListener("click", async (event) => {
       flash(".me-leaves", error.message, false);
     }
   }
+  if (action === "pass-cancel") {
+    if (!confirm("Энэ хүсэлтийг цуцлах уу?")) return;
+    try {
+      state.live = await api(`/api/passes/${encodeURIComponent(button.dataset.id)}`, { method: "DELETE" });
+      render();
+      flash(".me-passes", "Хүсэлт цуцлагдлаа");
+    } catch (error) {
+      flash(".me-passes", error.message, false);
+    }
+  }
   if (action === "leave-decide") {
     try {
       state.admin = await api(`/api/hr/leaves/${encodeURIComponent(button.dataset.id)}`, {
@@ -6081,6 +6169,20 @@ stage.addEventListener("submit", async (event) => {
     }
     return;
   }
+  if (form.dataset.form === "pass") {
+    const button = form.querySelector("button[type='submit']");
+    button.disabled = true;
+    try {
+      state.live = await api("/api/passes", { method: "POST", body: JSON.stringify(data) });
+      render();
+      flash(".me-passes", data.kind === "exit" ? "Хүсэлт уулын ахлах руу илгээгдлээ" : "Хүсэлт хүний нөөц, уулын ахлах руу илгээгдлээ");
+    } catch (error) {
+      flash(".me-passes", error.message, false);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
   if (form.dataset.form === "todo") {
     const button = form.querySelector("button[type='submit']");
     await liveAction("/api/reminders", "POST", { title: data.title, due: data.due }, button);
@@ -6405,6 +6507,7 @@ function showLogin(message = "") {
   disconnectWatch();
   masterReset();
   fleetReset();
+  passesReset();
   wkVoice.queue.length = 0;
   closeModal(true);
   state.wk?.wakeLock?.release().catch(() => {});
@@ -6509,6 +6612,7 @@ if (location.pathname === "/queen" && "serviceWorker" in navigator) navigator.se
 
 initMine({ stage, state, api, render, openModal, closeModal, toast });
 initFleet({ stage, state, api, render, openModal, closeModal, toast });
+initPasses({ stage, state, api, render, openModal, closeModal, toast });
 
 async function boot() {
   let user;

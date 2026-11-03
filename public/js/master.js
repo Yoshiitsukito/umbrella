@@ -1,5 +1,5 @@
-// MASTER pages (mine board, safety, competency, operations), the camp manager's camp page, and the safety strip on a
-// worker's home page. Tables and forms are drawn from the shared schema in minecore.js, so the server checks exactly what is shown.
+// MASTER pages (mine board, safety, competency, operations), the camp manager's camp page, the security officers'
+// violations page, and the safety strip on a worker's home page. Tables and forms are drawn from the shared schema in minecore.js, so the server checks exactly what is shown.
 import {
   ALCOHOL_LIMIT,
   BLAST_STATUS,
@@ -15,6 +15,7 @@ import {
   INCIDENT_KINDS,
   INCIDENT_STATUS,
   INDUCTION_ITEMS,
+  MEASURES,
   MEDICAL_RESULTS,
   PERMIT_STATUS,
   PERMIT_TYPES,
@@ -26,6 +27,9 @@ import {
   SHIFTS,
   SOS_KINDS,
   SOS_STATUS,
+  VIOLATION_KINDS,
+  VIOLATION_STATUS,
+  VIOLATORS,
   VISITOR_KINDS,
   WO_STATUS,
   WX_METRICS,
@@ -49,14 +53,18 @@ import { mountFeeds, snapshotOf, stopFeeds } from "./campcams.js";
 
 export const MASTER_VIEWS = ["mine", "hse", "skills", "ops"];
 export const CAMP_VIEWS = ["camp"];
-const MINE_VIEWS = [...MASTER_VIEWS, ...CAMP_VIEWS];
+export const GUARD_VIEWS = ["guard"];
+const MINE_VIEWS = [...MASTER_VIEWS, ...CAMP_VIEWS, ...GUARD_VIEWS];
 export const CAMP_ROLE = "campmgr";
+const GUARD_ROLE = "security";
 const isCamp = () => ctx?.state.me?.role === CAMP_ROLE;
-const apiBase = () => (isCamp() ? "/api/camp" : "/api/master");
+const isGuard = () => ctx?.state.me?.role === GUARD_ROLE;
+const apiBase = () => (isCamp() ? "/api/camp" : isGuard() ? "/api/guard" : "/api/master");
 
 const TABS = {
   hse: [
     ["incidents", "Осол, аюул", "alert"],
+    ["violations", "Зөрчил", "shield"],
     ["capa", "CAPA", "clipboard"],
     ["talks", "Зааварчилгаа", "megaphone"],
     ["permits", "Зөвшөөрөл", "permit"],
@@ -93,6 +101,7 @@ const TABS = {
     ["payroll", "Цалингийн тайлан", "wallet"],
     ["contractors", "Гэрээт", "briefcase"],
   ],
+  guard: [["violations", "Зөрчил", "shield"]],
 };
 
 const PAGES = {
@@ -101,6 +110,7 @@ const PAGES = {
   skills: ["Ур чадвар, эрүүл мэнд", "badge"],
   ops: ["Үйлдвэрлэл, техник", "truck"],
   camp: ["Кэмп, логистик", "camp"],
+  guard: ["Хамгаалалт", "shield"],
 };
 
 const COL_ICON = {
@@ -133,6 +143,7 @@ const FILTERS = {
   posts: { key: "position" },
   transport: { key: "dir" },
   contractors: { key: "status" },
+  violations: { key: "hseStatus", get: (item) => item.hseStatus || "new", labels: () => VIOLATION_STATUS },
 };
 
 const ICON = {
@@ -201,6 +212,8 @@ const ICON = {
   cog: `<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>`,
   shield: `<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/>`,
   moon: `<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>`,
+  gavel: `<path d="m13.5 4 6.5 6.5M10.5 7l6.5 6.5M12 5.5l-4 4 6.5 6.5 4-4z"/><path d="m9.5 13-6 6M3 21h9"/>`,
+  gate: `<path d="M3.5 20.5V8l8.5-4.5L20.5 8v12.5"/><path d="M8 20.5v-8h8v8M8 16.5h8"/>`,
 };
 
 let ctx = null;
@@ -411,6 +424,7 @@ function hero(view) {
         <h1>${esc(title)}</h1>
         <span class="m-pill">${ico("calendar")}${fmtDate(m.data.today)}</span>
         <span class="m-pill">${ico("clock")}${SHIFTS[m.data.shift]} ээлж</span>
+        ${view === "guard" ? `<button class="chip m-hero-link" type="button" data-m="goto" data-view="passes">${ico("gate")}Хаалга, хөдөлгөөний зөвшөөрөл</button>` : ""}
         <button class="icon-btn m-foldall" type="button" data-m="fold-all" title="Бүгдийг хураах / дэлгэх" aria-label="Бүгдийг хураах / дэлгэх">${ico("fold")}</button>
       </div>
       <div class="m-stats">${heroStats(view).map(([value, label, tone]) => stat(value, label, tone)).join("")}</div>
@@ -436,12 +450,21 @@ const addBtn = (name, preset) => `<button class="primary m-add" type="button" da
 
 function heroStats(view) {
   const d = m.data;
+  if (view === "guard") {
+    const list = d.guard.violations;
+    const today = list.filter((item) => localInput(Date.parse(item.at)).slice(0, 10) === d.today).length;
+    const waiting = list.filter((item) => ["new", "review"].includes(item.hseStatus || "new")).length;
+    return [[today, "Өнөөдрийн зөрчил"], [waiting, "ХАБЭА шийдвэрлээгүй"], [d.gate.ready, "Хаалгаар гарах, орох"], [d.gate.out, "Бүсээс гарсан"], [d.gate.late, "Хугацаа хэтэрсэн", d.gate.late ? "neg" : ""]];
+  }
   if (view === "camp") {
     const beds = d.camp.rooms.reduce((sum, item) => sum + item.beds, 0);
     const used = Object.keys(d.camp.beds).length;
     const change = crewChange(staffUsers(), d.plans, d.leaves, d.today);
+    const offRota = (kind) => (d.passes || []).filter((item) => item.kind === kind && item.date === d.today).map((item) => item.uid);
+    const arrive = new Set([...change.arrive, ...offRota("arrive")]).size;
+    const depart = new Set([...change.depart, ...offRota("depart")]).size;
     const cams = d.camp.cameras || [];
-    return [[`${cams.filter((item) => item.enabled).length}/${cams.length}`, "Камер идэвхтэй"], [`${used}/${beds}`, "Ор эзэлсэн"], [change.arrive.length, "Өнөөдөр ирэх"], [change.depart.length, "Өнөөдөр буцах"], [d.camp.contractors.filter((item) => item.status === "active").length, "Идэвхтэй гэрээт"]];
+    return [[`${cams.filter((item) => item.enabled).length}/${cams.length}`, "Камер идэвхтэй"], [`${used}/${beds}`, "Ор эзэлсэн"], [arrive, "Өнөөдөр ирэх"], [depart, "Өнөөдөр буцах"], [d.camp.contractors.filter((item) => item.status === "active").length, "Идэвхтэй гэрээт"]];
   }
   const now = Date.parse(d.now);
   const onSite = Object.values(d.people).filter((item) => item.state === "in").length;
@@ -456,7 +479,8 @@ function heroStats(view) {
     const talks = d.hse.talks.filter((item) => item.date === d.shiftDate);
     const audience = talks.reduce((sum, item) => sum + (d.audience[item.id] || []).length, 0);
     const acked = talks.reduce((sum, item) => sum + item.acks.filter((ack) => (d.audience[item.id] || []).includes(ack.uid)).length, 0);
-    return [[openIncidents, "Нээлттэй осол, аюул", openIncidents ? "neg" : ""], [overdue, "Хэтэрсэн CAPA", overdue ? "neg" : ""], [activePermits, "Идэвхтэй зөвшөөрөл"], [audience ? `${acked}/${audience}` : "–", "Зааварчилгаа танилцсан"]];
+    const newViolations = (d.guard?.violations || []).filter((item) => (item.hseStatus || "new") === "new").length;
+    return [[openIncidents, "Нээлттэй осол, аюул", openIncidents ? "neg" : ""], [newViolations, "Шинэ зөрчил (хамгаалалт)", newViolations ? "neg" : ""], [overdue, "Хэтэрсэн CAPA", overdue ? "neg" : ""], [activePermits, "Идэвхтэй зөвшөөрөл"], [audience ? `${acked}/${audience}` : "–", "Зааварчилгаа танилцсан"]];
   }
   if (view === "skills") {
     const soon = d.skills.certs.filter((item) => expiryState(item.expires, d.today).state === "soon").length;
@@ -504,6 +528,7 @@ function tabAlert(tab) {
   const now = Date.parse(d.now);
   const count = {
     incidents: () => d.hse.incidents.filter((item) => item.status === "open").length,
+    violations: () => (d.guard?.violations || []).filter((item) => (item.hseStatus || "new") === "new").length,
     capa: () => d.hse.capa.filter((item) => item.status !== "done" && item.due && item.due < d.today).length,
     permits: () => d.hse.permits.filter((item) => permitState(item, now) === "expired").length,
     weather: () => d.hse.wxEvents.filter((item) => !item.end).length,
@@ -521,6 +546,7 @@ function tabAlert(tab) {
 function tabbed(view) {
   const tabs = TABS[view];
   const current = tabs.some(([key]) => key === m.tab[view]) ? m.tab[view] : tabs[0][0];
+  if (tabs.length === 1) return tabBody(view, current);
   return `
     <div class="m-tabbar">
       <nav class="m-tabs" role="tablist">${tabs
@@ -600,7 +626,15 @@ const DECOR = {
     enabled: (item) => (item.enabled ? badge("Идэвхтэй", "ok") : badge("Унтраалттай")),
   },
   visitors: { induction: (item) => `${(item.induction || []).length}/${Object.keys(INDUCTION_ITEMS).length}` },
+  violations: {
+    party: (item) => `<span class="m-who"><b>${esc(violatorOf(item))}</b><small>${esc(VIOLATORS[item.party] || "")}</small></span>`,
+    kind: (item) => `${esc(VIOLATION_KINDS[item.kind] || item.kind)}${item.photo ? ` ${ico("photo", "m-ico tiny")}` : ""}`,
+    severity: (item) => badge(SEVERITIES[item.severity], TONE.severity[item.severity]),
+  },
 };
+
+const violatorOf = (item) => (item.party === "staff" ? nameOf(item.uid) : item.person || "–");
+const HSE_TONE = { new: "bad", review: "warn", acted: "ok", dismissed: "" };
 
 const EXTRA_COLS = {
   talks: [["Танилцсан", (item) => {
@@ -645,6 +679,12 @@ const EXTRA_COLS = {
     return `${item.beds - used}/${item.beds}`;
   }]],
   transport: [["Зорчигч", (item) => `${manifest(item).length}`]],
+  violations: [["ХАБЭА", (item) => {
+    const status = item.hseStatus || "new";
+    const label = status === "acted" && item.measure ? `${VIOLATION_STATUS.acted} · ${MEASURES[item.measure]}` : VIOLATION_STATUS[status];
+    const note = item.hseNote || (item.hseBy ? `${item.hseBy} · ${fmtMoment(item.hseAt)}` : "");
+    return `<span class="m-who">${badge(label, HSE_TONE[status])}${note ? `<small title="${esc(item.hseBy ? `${item.hseBy} · ${fmtMoment(item.hseAt)}` : "")}">${esc(note)}</small>` : ""}</span>`;
+  }]],
 };
 
 function assignCheck(item) {
@@ -707,6 +747,7 @@ function searchText(name, item) {
       if (field.type === "ref") return refLabel(field.ref, value);
       return typeof value === "object" ? "" : String(value ?? "");
     })
+    .concat(name === "violations" ? [violatorOf(item), item.hseNote || ""] : [])
     .join(" ")
     .toLowerCase();
 }
@@ -737,6 +778,14 @@ function rowActions(name, item) {
   }
   if (name === "workorders" && item.status !== "done") buttons.push(quick({ status: "done" }, "check", "Дууссан"));
   if (name === "transport") buttons.push(button("manifest", "people", "Зорчигчийн жагсаалт"));
+  if (name === "violations") {
+    if (item.photo) buttons.push(button("photo", "photo", "Нотлох зураг"));
+    if (!isGuard()) {
+      buttons.push(button("vio-decide", "gavel", "Арга хэмжээ авах"));
+      return `<div class="acts">${buttons.join("")}</div>`;
+    }
+    if ((item.hseStatus || "new") !== "new") return `<div class="acts">${buttons.join("")}</div>`;
+  }
   if (!schema.immutable) buttons.push(button("edit", "edit", "Засах"));
   if (!schema.immutable) buttons.push(`<button class="icon-btn danger" type="button" data-m="delete" data-name="${name}" data-id="${item.id}" title="Устгах" aria-label="Устгах">${ico("trash")}</button>`);
   return `<div class="acts">${buttons.join("")}</div>`;
@@ -772,7 +821,7 @@ function detailFields(name, item) {
 function detailValue(name, field, item) {
   const value = item[field.key];
   if (field.type === "long") return `<p class="m-pre">${esc(value)}</p>`;
-  if (field.type === "photo") return `<button type="button" class="m-thumb" data-m="photo" data-id="${item.id}"><img src="/api/master/photo/${item.id}" alt="" loading="lazy" /></button>`;
+  if (field.type === "photo") return `<button type="button" class="m-thumb" data-m="photo" data-name="${name}" data-id="${item.id}"><img src="${apiBase()}/photo/${item.id}" alt="" loading="lazy" /></button>`;
   if (field.type === "geo") return `<a href="https://www.openstreetmap.org/?mlat=${value.lat}&mlon=${value.lng}#map=17/${value.lat}/${value.lng}" target="_blank" rel="noopener">${ico("map", "m-ico tiny")} ${value.lat.toFixed(5)}, ${value.lng.toFixed(5)}</a>`;
   if (field.type === "users") return value.map((uid) => badge(nameOf(uid))).join(" ");
   if (field.type === "checks") {
@@ -807,7 +856,7 @@ function collectionPanel(name, { title, filter, key = name } = {}) {
   const tools = `
     <label class="m-searchbox">${ico("search")}<input type="search" class="m-search" data-mq="${esc(key)}" value="${esc(m.query[key] || "")}" placeholder="Хайх" aria-label="${esc(schema.label)} хайх" /></label>
     <button class="icon-btn" type="button" data-m="csv" data-name="${name}" title="CSV татах" aria-label="CSV татах">${ico("download")}</button>
-    ${addBtn(name)}`;
+    ${name === "violations" && !isGuard() ? "" : addBtn(name)}`;
   const body = `
     ${spec ? chipsHtml(key, base, spec) : ""}
     <div class="m-scroll"><table class="m-table">
@@ -841,9 +890,23 @@ function downloadCsv(filename, rows) {
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
+/** Columns a CSV adds after the schema's own fields. */
+const CSV_EXTRA = {
+  violations: [
+    ["ХАБЭА төлөв", (item) => VIOLATION_STATUS[item.hseStatus || "new"]],
+    ["Арга хэмжээ", (item) => MEASURES[item.measure] || ""],
+    ["ХАБЭА тайлбар", (item) => item.hseNote || ""],
+    ["Шийдсэн", (item) => (item.hseBy ? `${item.hseBy} ${localInput(Date.parse(item.hseAt)).replace("T", " ")}` : "")],
+  ],
+};
+
 function exportCollection(name) {
   const fields = COLLECTIONS[name].fields;
-  const rows = [fields.map((field) => field.label), ...records(name).sort(sortKey(name)).map((item) => fields.map((field) => csvCell(name, field, item)))];
+  const extra = CSV_EXTRA[name] || [];
+  const rows = [
+    [...fields.map((field) => field.label), ...extra.map(([label]) => label)],
+    ...records(name).sort(sortKey(name)).map((item) => [...fields.map((field) => csvCell(name, field, item)), ...extra.map(([, get]) => get(item))]),
+  ];
   downloadCsv(`${name}-${m.data.today}.csv`, rows);
 }
 
@@ -905,7 +968,7 @@ function fieldHtml(name, field, values, item) {
       const has = Boolean(item?.photo);
       return wrap(`<div class="m-photo">
           <input type="hidden" name="${field.key}" value="${has ? "keep" : ""}" />
-          <img class="m-photo-img" alt=""${has ? ` src="/api/master/photo/${item.id}"` : " hidden"} />
+          <img class="m-photo-img" alt=""${has ? ` src="${apiBase()}/photo/${item.id}"` : " hidden"} />
           <span class="m-acts"><label class="chip m-file">${ico("photo")}Зураг сонгох<input type="file" accept="image/*" capture="environment" data-photo="${field.key}" hidden /></label>
           <button class="chip" type="button" data-photo-clear="${field.key}"${has ? "" : " hidden"}>Зураг хасах</button></span>
         </div>`, "div");
@@ -1267,9 +1330,65 @@ function openPass(id) {
   });
 }
 
-function openPhoto(id) {
-  const item = recordOf("incidents", id);
-  ctx.openModal({ shield: ico("photo"), title: esc(item?.title || "Зураг"), sub: item ? fmtMoment(item.at) : "", body: `<img class="m-photo-full" src="/api/master/photo/${esc(id)}" alt="" />`, className: "m-modal" });
+function openPhoto(name, id) {
+  const item = recordOf(name, id);
+  const title = name === "violations" && item ? `${VIOLATION_KINDS[item.kind]} · ${violatorOf(item)}` : item?.title || "Зураг";
+  ctx.openModal({ shield: ico("photo"), title: esc(title), sub: item ? fmtMoment(item.at) : "", body: `<img class="m-photo-full" src="${apiBase()}/photo/${esc(id)}" alt="" />`, className: "m-modal" });
+}
+
+/* ---------- HSE decision on a security violation ---------- */
+
+function openViolationDecide(id) {
+  const item = recordOf("violations", id);
+  if (!item) return;
+  const status = item.hseStatus && item.hseStatus !== "new" ? item.hseStatus : "acted";
+  const choice = (value, label, hint) => `<label class="m-choice"><input type="radio" name="status" value="${value}"${status === value ? " checked" : ""} /><span><b>${esc(label)}</b><small>${esc(hint)}</small></span></label>`;
+  const body = `<form class="m-form m-vio-form" novalidate>
+      <div class="m-vio-sum">
+        ${badge(SEVERITIES[item.severity], TONE.severity[item.severity])}
+        <b>${esc(VIOLATION_KINDS[item.kind])}</b>
+        <span>${esc(violatorOf(item))} · ${esc(VIOLATORS[item.party])}${item.place ? ` · ${esc(item.place)}` : ""}</span>
+        <p class="m-pre">${esc(item.detail)}</p>
+        ${item.photo ? `<img class="m-vio-photo" src="${apiBase()}/photo/${esc(id)}" alt="Нотлох зураг" />` : ""}
+      </div>
+      <div class="m-choices">
+        ${choice("review", VIOLATION_STATUS.review, "Шалгаж байгааг хамгаалалтад мэдэгдэнэ")}
+        ${choice("acted", VIOLATION_STATUS.acted, "Арга хэмжээ сонгож бүртгэнэ")}
+        ${choice("dismissed", VIOLATION_STATUS.dismissed, "Шалтгаанаа заавал бичнэ")}
+      </div>
+      <div class="m-form-grid">
+        <label class="m-field" data-vio="acted"><span>Арга хэмжээ *</span><select name="measure">${options(Object.entries(MEASURES), item.measure, "Сонгоно уу")}</select></label>
+        <label class="m-field is-wide"><span>Тайлбар</span><textarea name="note" maxlength="300" rows="3">${esc(item.hseNote || "")}</textarea></label>
+      </div>
+      ${item.party === "staff" ? `<p class="m-hint">${ico("bell")}<span>Арга хэмжээ авбал ажилтанд мэдэгдэл очно.</span></p>` : ""}
+      <p class="form-error m-form-error" role="alert" hidden></p>
+      <div class="modal-actions"><button class="chip" type="button" data-close>Болих</button><button class="primary" type="submit">${ico("check")}Хадгалах</button></div>
+    </form>`;
+  const wrap = ctx.openModal({ shield: ico("gavel"), title: "ХАБЭА · зөрчил", sub: `${fmtMoment(item.at)} · хамгаалалтаас`, body, className: "m-modal" });
+  if (!wrap) return;
+  const form = wrap.querySelector("form");
+  const sync = () => {
+    const acted = form.elements.status.value === "acted";
+    form.querySelector("[data-vio='acted']").hidden = !acted;
+  };
+  sync();
+  form.addEventListener("change", sync);
+  form.addEventListener("input", () => (form.dataset.dirty = "1"), { once: true });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = form.querySelector("button[type='submit']");
+    button.disabled = true;
+    formError(form, "");
+    try {
+      await send(`/api/master/violations/${encodeURIComponent(id)}/decide`, "POST", { status: form.elements.status.value, measure: form.elements.measure.value, note: form.elements.note.value });
+      ctx.closeModal(true);
+      setTimeout(() => paint(true), 260);
+      ctx.toast("ХАБЭА", "Шийдвэр хадгалагдлаа");
+    } catch (error) {
+      formError(form, error.message);
+      button.disabled = false;
+    }
+  });
 }
 
 /* ---------- transport manifests ---------- */
@@ -1758,7 +1877,12 @@ async function onClick(event) {
   if (action === "talk-acks") openTalkAcks(id);
   if (action === "muster-open") openMuster();
   if (action === "pass") openPass(id);
-  if (action === "photo") openPhoto(id);
+  if (action === "photo") openPhoto(name || "incidents", id);
+  if (action === "vio-decide") openViolationDecide(id);
+  if (action === "goto") {
+    ctx.state.view = button.dataset.view;
+    ctx.render();
+  }
   if (action === "manifest") openManifest(id);
   if (action === "cam-open") openCamera(id);
   if (action === "cam-cols") {
