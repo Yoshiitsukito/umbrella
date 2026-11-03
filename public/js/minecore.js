@@ -90,6 +90,17 @@ export const TRANSPORT_DIR = { in: "Ирэх", out: "Буцах" };
 export const VEHICLES = { bus: "Автобус", flight: "Нислэг", car: "Суудлын машин" };
 export const RISK_STATUS = { open: "Хяналт шаардлагатай", controlled: "Хяналтад" };
 export const CONTRACT_STATUS = { active: "Идэвхтэй", ended: "Дууссан" };
+export const CAMERA_ZONES = { gate: "Хаалга, КПП", dorm: "Байр", canteen: "Хоолны танхим", parking: "Зогсоол", perimeter: "Хашаа", store: "Агуулах", office: "Оффис" };
+export const CAMERA_KINDS = {
+  demo: "Туршилтын (симуляц)",
+  device: "Энэ төхөөрөмжийн камер",
+  mjpeg: "MJPEG урсгал",
+  snapshot: "Зураг (snapshot)",
+  video: "Видео (HLS / MP4)",
+  embed: "Вэб хуудас (iframe)",
+};
+/** Camera kinds that play from an address; the browser reaches it directly, so it must be http(s). */
+export const CAMERA_URL_KINDS = ["mjpeg", "snapshot", "video", "embed"];
 export const SOS_KINDS = { sos: "SOS товч", lone: "Ганцаар ажиллагч хариу өгөөгүй" };
 export const SOS_STATUS = { open: "Шинэ", ack: "Хүлээн авсан", resolved: "Шийдвэрлэсэн", cancelled: "Цуцалсан" };
 /** Pre-start checklist: key, label, and whether a failure takes the machine out of service. */
@@ -502,6 +513,21 @@ export const COLLECTIONS = {
       f("status", "Төлөв", "select", { options: CONTRACT_STATUS, list: true, def: "active" }),
     ],
   },
+  cameras: {
+    area: "camp",
+    prefix: "cam",
+    keep: 64,
+    label: "Камер",
+    fields: [
+      f("name", "Нэр", "text", { max: 40, required: true, list: true, unique: true }),
+      f("zone", "Байршил", "select", { options: CAMERA_ZONES, required: true, list: true, def: "gate" }),
+      f("kind", "Холболт", "select", { options: CAMERA_KINDS, required: true, list: true, def: "demo" }),
+      f("url", "Урсгалын хаяг (https://…)", "url", { max: 500, show: { kind: CAMERA_URL_KINDS } }),
+      f("every", "Шинэчлэх (сек)", "number", { min: 1, max: 60, step: 1, def: 2, show: { kind: ["snapshot"] } }),
+      f("enabled", "Идэвхтэй", "bool", { list: true, def: true }),
+      f("note", "Тэмдэглэл", "text", { max: 80 }),
+    ],
+  },
 };
 
 export const AREAS = ["hse", "skills", "ops", "camp"];
@@ -617,6 +643,17 @@ function cleanField(field, raw, ctx) {
     }
     case "time":
       return CLOCK.test(String(raw)) ? { value: String(raw) } : fail("ЦЦ:ММ хэлбэртэй");
+    case "url": {
+      const text = String(raw).trim();
+      let url = null;
+      try {
+        url = new URL(text);
+      } catch {
+        /* reported below */
+      }
+      if (!url || !["http:", "https:"].includes(url.protocol) || text.length > field.max || /\s/.test(text)) return fail("http:// эсвэл https://-ээр эхэлсэн хаяг");
+      return { value: url.href };
+    }
     case "select":
       return Object.hasOwn(field.options, raw) ? { value: String(raw) } : fail("сонголт буруу");
     case "user":

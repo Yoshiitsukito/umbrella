@@ -1,8 +1,10 @@
-// MASTER pages (mine board, safety, competency, operations, camp) and the safety strip on a worker's home page.
-// Tables and forms are drawn from the shared schema in minecore.js, so the server checks exactly what is shown.
+// MASTER pages (mine board, safety, competency, operations), the camp manager's camp page, and the safety strip on a
+// worker's home page. Tables and forms are drawn from the shared schema in minecore.js, so the server checks exactly what is shown.
 import {
   ALCOHOL_LIMIT,
   BLAST_STATUS,
+  CAMERA_KINDS,
+  CAMERA_ZONES,
   CAPA_STATUS,
   CERT_TYPES,
   COLLECTIONS,
@@ -43,8 +45,14 @@ import {
   wxValue,
 } from "./minecore.js";
 import { addDays } from "./workstats.js";
+import { mountFeeds, snapshotOf, stopFeeds } from "./campcams.js";
 
-export const MASTER_VIEWS = ["mine", "hse", "skills", "ops", "camp"];
+export const MASTER_VIEWS = ["mine", "hse", "skills", "ops"];
+export const CAMP_VIEWS = ["camp"];
+const MINE_VIEWS = [...MASTER_VIEWS, ...CAMP_VIEWS];
+export const CAMP_ROLE = "campmgr";
+const isCamp = () => ctx?.state.me?.role === CAMP_ROLE;
+const apiBase = () => (isCamp() ? "/api/camp" : "/api/master");
 
 const TABS = {
   hse: [
@@ -79,6 +87,7 @@ const TABS = {
     ["org", "Бүтэц", "sitemap"],
   ],
   camp: [
+    ["cameras", "Камер", "cctv"],
     ["rooms", "Өрөө", "bed"],
     ["transport", "Ээлжийн тээвэр", "bus"],
     ["payroll", "Цалингийн тайлан", "wallet"],
@@ -149,6 +158,9 @@ const ICON = {
   badge: `<rect x="3.5" y="3.5" width="17" height="13" rx="2"/><path d="M7.5 8h9M7.5 11.5h5"/><circle cx="16" cy="17" r="3"/>`,
   truck: `<path d="M3 17.5h11.5V12H9.5L7.5 8H3z"/><path d="M14.5 13.5 18 6l3 1.5-2.5 6"/><circle cx="6.5" cy="18.5" r="2"/><circle cx="12" cy="18.5" r="2"/>`,
   camp: `<path d="M3 20.5 12 4l9 16.5z"/><path d="M12 20.5 9 14.5h6z"/>`,
+  cctv: `<path d="M3 8.5 15.5 5l1.6 5.6-12.5 3.5z"/><path d="m17 7.2 3.5-1v5.6l-3-.6M8 13l1 3.5H4.5V20"/><circle cx="13" cy="8.6" r=".6"/>`,
+  expand: `<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>`,
+  layout: `<rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M12 3.5v17M3.5 12h17"/>`,
   refresh: `<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/>`,
   print: `<path d="M7 9V4h10v5M7 17H4.5v-7h15v7H17"/><rect x="7" y="14" width="10" height="6"/>`,
   alert: `<path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4.5M12 17.2v.1"/>`,
@@ -204,6 +216,7 @@ const m = {
   seenSos: new Set(),
   payroll: null,
   payMonth: null,
+  camCols: [1, 2, 3, 4].includes(Number(localStorage.getItem("camp-cam-cols"))) ? Number(localStorage.getItem("camp-cam-cols")) : 3,
 };
 
 function readStored(key, fallback) {
@@ -276,11 +289,13 @@ export async function masterStart() {
   if (!m.timer) m.timer = setInterval(() => refresh(), 15000);
   if (!m.data) await refresh();
   else paint();
+  mountCams();
 }
 
 export function masterStop() {
   clearInterval(m.timer);
   m.timer = 0;
+  stopFeeds();
 }
 
 export function masterReset() {
@@ -294,7 +309,7 @@ async function refresh() {
   if (m.loading || !ctx.state.me) return;
   m.loading = true;
   try {
-    setData(await ctx.api("/api/master"));
+    setData(await ctx.api(apiBase()));
   } catch (error) {
     if (!m.data) ctx.stage.innerHTML = `<p class="error">${esc(error.message)}</p>`;
   } finally {
@@ -315,13 +330,24 @@ function busy() {
 }
 
 function paint(force = false) {
-  if (!MASTER_VIEWS.includes(ctx.state.view)) return;
+  if (!MINE_VIEWS.includes(ctx.state.view)) return;
   if (!force && busy()) return;
+  if (!force && ctx.stage.querySelector(".cam-wall")?.dataset.sig === camSig()) {
+    mountCams();
+    return;
+  }
   const scroll = ctx.stage.querySelector(".m-tabs")?.scrollLeft || 0;
   ctx.stage.classList.add("is-quiet");
   ctx.stage.innerHTML = masterView(ctx.state.view);
   const tabs = ctx.stage.querySelector(".m-tabs");
   if (tabs) tabs.scrollLeft = scroll;
+  mountCams();
+}
+
+/** Starts the camera feeds the page shows and stops the rest; called after every paint of a camp page. */
+function mountCams() {
+  if (m.data?.camp?.cameras && ctx.stage.querySelector("[data-feed]")) mountFeeds(ctx.stage, m.data.camp.cameras);
+  else stopFeeds();
 }
 
 async function send(path, method = "POST", body = {}) {
@@ -357,7 +383,7 @@ function beep() {
 }
 
 function alertSos() {
-  for (const sos of m.data.hse.sos || []) {
+  for (const sos of m.data.hse?.sos || []) {
     if (sos.status !== "open" || m.seenSos.has(sos.id)) continue;
     m.seenSos.add(sos.id);
     const text = `${nameOf(sos.uid)} · ${SOS_KINDS[sos.kind]} · ${clockOf(sos.at)}`;
@@ -372,7 +398,7 @@ function alertSos() {
 export function masterView(view) {
   if (!m.data) return `<div class="admin-page m-page"><section class="panel"><p class="muted">Ачаалж байна…</p></section></div>`;
   const body = view === "mine" ? dashboard() : tabbed(view);
-  return `<div class="admin-page m-page">${hero(view)}${alertStrip()}${body}</div>`;
+  return `<div class="admin-page m-page">${hero(view)}${m.data.hse ? alertStrip() : ""}${body}</div>`;
 }
 
 function hero(view) {
@@ -410,6 +436,13 @@ const addBtn = (name, preset) => `<button class="primary m-add" type="button" da
 
 function heroStats(view) {
   const d = m.data;
+  if (view === "camp") {
+    const beds = d.camp.rooms.reduce((sum, item) => sum + item.beds, 0);
+    const used = Object.keys(d.camp.beds).length;
+    const change = crewChange(staffUsers(), d.plans, d.leaves, d.today);
+    const cams = d.camp.cameras || [];
+    return [[`${cams.filter((item) => item.enabled).length}/${cams.length}`, "Камер идэвхтэй"], [`${used}/${beds}`, "Ор эзэлсэн"], [change.arrive.length, "Өнөөдөр ирэх"], [change.depart.length, "Өнөөдөр буцах"], [d.camp.contractors.filter((item) => item.status === "active").length, "Идэвхтэй гэрээт"]];
+  }
   const now = Date.parse(d.now);
   const onSite = Object.values(d.people).filter((item) => item.state === "in").length;
   const held = Object.values(d.holds).filter((list) => list.length).length;
@@ -438,10 +471,7 @@ function heroStats(view) {
     const openWo = d.ops.workorders.filter((item) => item.status !== "done").length;
     return [[num(yesterday?.tonnes), "Өчигдөр, тонн"], [num(today?.tonnes), "Өнөөдөр, тонн"], [pct(d.kpi.availability), "Бэлэн байдал"], [openWo, "Нээлттэй засвар", openWo ? "neg" : ""], [lowStock, "Дутагдаж буй бараа", lowStock ? "neg" : ""]];
   }
-  const beds = d.camp.rooms.reduce((sum, item) => sum + item.beds, 0);
-  const used = Object.keys(d.camp.beds).length;
-  const change = crewChange(staffUsers(), d.plans, d.leaves, d.today);
-  return [[`${used}/${beds}`, "Ор эзэлсэн"], [change.arrive.length, "Өнөөдөр ирэх"], [change.depart.length, "Өнөөдөр буцах"], [d.camp.contractors.filter((item) => item.status === "active").length, "Идэвхтэй гэрээт"]];
+  return [];
 }
 
 /** Live emergencies shown on every MASTER page. */
@@ -513,6 +543,7 @@ function tabBody(view, tab) {
     rooms: roomsTab,
     transport: transportTab,
     payroll: payrollTab,
+    cameras: camerasTab,
   };
   return special[tab] ? special[tab]() : collectionPanel(tab);
 }
@@ -852,6 +883,8 @@ function fieldHtml(name, field, values, item) {
       return wrap(`<input type="datetime-local" name="${field.key}" value="${esc(inputValue(field, value))}"${required} />`);
     case "time":
       return wrap(`<input type="time" name="${field.key}" value="${esc(value)}" />`);
+    case "url":
+      return `<label class="m-field is-wide" data-key="${field.key}"${show}>${label}<input type="url" inputmode="url" name="${field.key}" maxlength="${field.max}" placeholder="https://" value="${esc(value)}" spellcheck="false" autocomplete="off" /></label>`;
     case "select":
       return wrap(`<select name="${field.key}"${required}>${options(Object.entries(field.options), value, field.required ? "" : "—")}</select>`);
     case "user":
@@ -979,7 +1012,8 @@ function openForm(name, item = null, preset = {}) {
   const now = Date.now();
   const values = item ? { ...item } : Object.fromEntries(schema.fields.map((field) => [field.key, defaultValue(field, now)]));
   Object.assign(values, preset);
-  const body = `<form class="m-form" novalidate>
+  const hint = name === "cameras" ? `<p class="m-hint">${ico("cctv")}<span>IP камер ихэвчлэн RTSP урсгал гаргадаг бөгөөд хөтөч үүнийг шууд тоглуулахгүй. NVR эсвэл камерын <b>MJPEG</b>, <b>snapshot</b> (JPEG) хаяг, эсвэл go2rtc / MediaMTX зэрэг хөрвүүлэгчийн <b>https</b> хаягийг оруулна уу. Туршихдаа «Туршилтын» эсвэл «Энэ төхөөрөмжийн камер»-ыг сонгоно.</span></p>` : "";
+  const body = `<form class="m-form" novalidate>${hint}
       <div class="m-form-grid">${schema.fields.map((field) => fieldHtml(name, field, values, item)).join("")}</div>
       <p class="form-error m-form-error" role="alert" hidden></p>
       <div class="modal-actions"><button class="chip" type="button" data-close>Болих</button><button class="primary" type="submit">${ico(item ? "check" : "add")}${item ? "Хадгалах" : "Нэмэх"}</button></div>
@@ -998,7 +1032,7 @@ function openForm(name, item = null, preset = {}) {
     formError(form, "");
     try {
       const data = formValues(form, schema.fields);
-      await send(item ? `/api/master/c/${name}/${item.id}` : `/api/master/c/${name}`, item ? "PUT" : "POST", data);
+      await send(item ? `${apiBase()}/c/${name}/${item.id}` : `${apiBase()}/c/${name}`, item ? "PUT" : "POST", data);
       ctx.closeModal(true);
       setTimeout(() => paint(true), 260);
     } catch (error) {
@@ -1014,7 +1048,7 @@ async function quickPatch(name, id, patch) {
   if (!item) return;
   const body = { ...item, ...patch };
   delete body.photo;
-  await attempt(() => send(`/api/master/c/${name}/${id}`, "PUT", body));
+  await attempt(() => send(`${apiBase()}/c/${name}/${id}`, "PUT", body));
 }
 
 /* ---------- QR scanning ---------- */
@@ -1583,13 +1617,80 @@ async function loadPayroll(month) {
   if (m.payLoading === month) return;
   m.payLoading = month;
   try {
-    m.payroll = await ctx.api(`/api/master/payroll?month=${encodeURIComponent(month)}`);
+    m.payroll = await ctx.api(`/api/camp/payroll?month=${encodeURIComponent(month)}`);
     paint(true);
   } catch (error) {
     ctx.toast("Цалингийн тайлан", error.message);
   } finally {
     m.payLoading = null;
   }
+}
+
+/** What the camera wall depends on; a data refresh that leaves it unchanged keeps the live feeds as they are. */
+function camSig() {
+  const cams = m.data?.camp?.cameras || [];
+  return JSON.stringify([m.camCols, m.filter.camzone || "", cams.map((cam) => [cam.id, cam.name, cam.zone, cam.kind, cam.url, cam.every, cam.enabled, cam.note])]);
+}
+
+function camerasTab() {
+  const cams = [...(m.data.camp.cameras || [])].sort((a, b) => a.name.localeCompare(b.name, "mn", { numeric: true }));
+  const zone = cams.some((cam) => cam.zone === m.filter.camzone) ? m.filter.camzone : "";
+  const shown = cams.filter((cam) => !zone || cam.zone === zone);
+  const zones = Object.entries(CAMERA_ZONES).filter(([key]) => cams.some((cam) => cam.zone === key));
+  const chip = (value, label, count) => `<button type="button" class="m-chip${zone === value ? " is-on" : ""}" data-m="filter" data-key="camzone" data-value="${esc(value)}">${esc(label)}<i>${count}</i></button>`;
+  const chips = zones.length > 1 ? `<div class="m-chips" role="group" aria-label="Байршил">${ico("sliders")}${chip("", "Бүгд", cams.length)}${zones.map(([key, label]) => chip(key, label, cams.filter((cam) => cam.zone === key).length)).join("")}</div>` : "";
+  const cols = [1, 2, 3, 4].map((count) => `<button type="button" class="m-chip${m.camCols === count ? " is-on" : ""}" data-m="cam-cols" data-cols="${count}" title="${count} багана" aria-label="${count} багана">${count}</button>`).join("");
+  const tools = `<div class="cam-cols" role="group" aria-label="Дэлгэцийн хуваалт">${ico("layout")}${cols}</div>${addBtn("cameras")}`;
+  const tiles = shown
+    .map(
+      (cam) => `<figure class="cam-tile" data-m="cam-open" data-id="${cam.id}">
+        <div class="cam-slot" data-feed="${cam.id}"></div>
+        <figcaption><i class="cam-dot" aria-hidden="true"></i><b>${esc(cam.name)}</b><small>${esc(CAMERA_ZONES[cam.zone] || "")}</small><span class="cam-kind">${esc(CAMERA_KINDS[cam.kind] || "")}</span>${ico("expand")}</figcaption>
+      </figure>`,
+    )
+    .join("");
+  const body = `${chips}${
+    shown.length
+      ? `<div class="cam-wall" data-cols="${m.camCols}" data-sig="${esc(camSig())}" style="--cam-cols:${m.camCols}">${tiles}</div>`
+      : `<p class="m-empty cam-empty">${ico("cctv")}<span>Камер бүртгэгдээгүй. «Нэмэх» дарж кэмпийн камераа холбоно уу.</span></p>`
+  }`;
+  return `${panel({ key: "cam-wall", icon: "cctv", title: "Камерын хяналт", count: shown.length, tools, body, cls: "cam-panel" })}
+    ${collectionPanel("cameras")}`;
+}
+
+function openCamera(id) {
+  const cam = recordOf("cameras", id);
+  if (!cam) return;
+  const wrap = ctx.openModal({
+    shield: ico("cctv"),
+    title: esc(cam.name),
+    sub: `${esc(CAMERA_ZONES[cam.zone] || "")} · ${esc(CAMERA_KINDS[cam.kind] || "")}${cam.note ? ` · ${esc(cam.note)}` : ""}`,
+    body: `<div class="cam-big"><div class="cam-slot" data-feed="${cam.id}:big"></div></div>
+      <div class="modal-actions">
+        <button class="chip" type="button" data-cam-edit>${ico("cog")}Тохиргоо</button>
+        <button class="chip" type="button" data-cam-full>${ico("expand")}Бүтэн дэлгэц</button>
+        <button class="primary" type="button" data-cam-shot>${ico("photo")}Зураг авах</button>
+      </div>`,
+    className: "m-modal cam-modal",
+  });
+  if (!wrap) return;
+  mountFeeds(wrap, m.data.camp.cameras);
+  wrap.querySelector("[data-cam-full]").addEventListener("click", () => wrap.querySelector(".cam-feed")?.requestFullscreen?.().catch(() => {}));
+  wrap.querySelector("[data-cam-shot]").addEventListener("click", () => {
+    const data = snapshotOf(`${cam.id}:big`);
+    if (!data) {
+      ctx.toast("Зураг авах", "Энэ урсгал өөр серверээс ирж байгаа тул хөтөч зураг хадгалахыг хориглож байна.");
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = data;
+    link.download = `${cam.name}-${localInput(Date.now()).replace(/[:T]/g, "-")}.png`;
+    link.click();
+  });
+  wrap.querySelector("[data-cam-edit]").addEventListener("click", () => {
+    ctx.closeModal(true);
+    setTimeout(() => openForm("cameras", recordOf("cameras", id)), 260);
+  });
 }
 
 /* ---------- events ---------- */
@@ -1650,7 +1751,7 @@ async function onClick(event) {
   if (action === "edit") openForm(name, recordOf(name, id));
   if (action === "delete") {
     if (!confirm("Энэ бүртгэлийг устгах уу?")) return;
-    await attempt(() => send(`/api/master/c/${name}/${id}`, "DELETE"));
+    await attempt(() => send(`${apiBase()}/c/${name}/${id}`, "DELETE"));
   }
   if (action === "quick") await quickPatch(name, id, JSON.parse(button.dataset.patch));
   if (action === "csv") exportCollection(name);
@@ -1659,10 +1760,16 @@ async function onClick(event) {
   if (action === "pass") openPass(id);
   if (action === "photo") openPhoto(id);
   if (action === "manifest") openManifest(id);
+  if (action === "cam-open") openCamera(id);
+  if (action === "cam-cols") {
+    m.camCols = Number(button.dataset.cols);
+    localStorage.setItem("camp-cam-cols", String(m.camCols));
+    paint(true);
+  }
   if (action === "site") await attempt(() => send(`/api/master/visitors/${id}/site`, "POST", { on: Boolean(button.dataset.on) }));
   if (action === "sos") await attempt(() => send(`/api/master/sos/${id}`, "POST", { status: button.dataset.status }));
   if (action === "beds-auto") {
-    const result = await attempt(() => send("/api/master/camp/auto"));
+    const result = await attempt(() => send("/api/camp/beds/auto"));
     if (result) ctx.toast("Орны хуваарилалт", `${result.added} хүн шинээр байрлаж, ${result.freed} ор чөлөөлөгдлөө${result.unplaced?.length ? ` · ${result.unplaced.length} хүнд ор хүрэлцсэнгүй` : ""}.`);
   }
   if (action === "wxsim-clear") await attempt(() => send("/api/master/wx-sim", "POST", { clear: true }));
@@ -1706,7 +1813,7 @@ async function onChange(event) {
   const input = event.target.closest("[data-mchange]");
   if (!input) return;
   if (input.dataset.mchange === "bed") {
-    await attempt(() => send("/api/master/camp/bed", "POST", { room: input.dataset.room, index: Number(input.dataset.index), uid: input.value || null }));
+    await attempt(() => send("/api/camp/beds", "POST", { room: input.dataset.room, index: Number(input.dataset.index), uid: input.value || null }));
     input.blur();
     paint(true);
   }

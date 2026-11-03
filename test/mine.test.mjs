@@ -265,7 +265,8 @@ test("demo seed fills every page once without blocking real accounts", () => {
   assert.equal(seedMine(db, { now: NOW, random: seededRandom() }), null);
   const view = masterView(db, NOW);
   assert.ok(view.ops.equipment.length >= 10);
-  assert.ok(view.hse.talks.length && view.hse.permits.length && view.camp.rooms.length);
+  assert.ok(view.hse.talks.length && view.hse.permits.length && db.camp.rooms.length);
+  assert.equal(view.camp, undefined, "camp records belong to the camp manager");
   for (const [uid, reasons] of Object.entries(view.holds)) assert.deepEqual(reasons, [], `${uid} must still clock in`);
   assert.equal(view.kpi.production.length, 7);
   assert.ok(JSON.stringify(db.hse).length < 900_000 && JSON.stringify(db.ops).length < 900_000);

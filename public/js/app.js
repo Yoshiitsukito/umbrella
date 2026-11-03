@@ -57,7 +57,7 @@ import {
   workload,
 } from "./wellstats.js";
 import { MENU_CATEGORIES, MENU_CATEGORY_LABEL, MENU_MEALS, MENU_MEAL_LABEL } from "./menulabels.js";
-import { MASTER_VIEWS, initMine, masterReset, masterStart, masterStop, masterView, workerPanel } from "./master.js";
+import { CAMP_VIEWS, MASTER_VIEWS, initMine, masterReset, masterStart, masterStop, masterView, workerPanel } from "./master.js";
 import { FLEET_VIEWS, fleetReset, fleetStart, fleetStop, fleetView, initFleet } from "./fleet.js";
 
 // Google Map Tiles API is not enabled on the project yet; set to true once it is.
@@ -110,8 +110,8 @@ const state = {
   briefing: false,
 };
 
-const ROLE_LABEL = { admin: "Админ", hr: "Хүний нөөц", kitchen: "Гал тогоо", user: "Хэрэглэгч", whiteking: "White Queen", master: "Уурхайн мастер", engineer: "Уулын ахлах инженер" };
-const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer"];
+const ROLE_LABEL = { admin: "Админ", hr: "Хүний нөөц", kitchen: "Гал тогоо", user: "Хэрэглэгч", whiteking: "White Queen", master: "Уурхайн мастер", engineer: "Уулын ахлах инженер", campmgr: "Кэмп менежер" };
+const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer", "campmgr"];
 const STAFF_ROLES = ["user", "hr", "kitchen"];
 const ADMIN_VIEWS = ["users", "account", "card", "whiteking"];
 const HR_VIEWS = ["staff", "today"];
@@ -141,10 +141,15 @@ function isEngineer() {
   return state.me?.role === "engineer";
 }
 
+function isCampManager() {
+  return state.me?.role === "campmgr";
+}
+
 function homeFor() {
   if (isStation()) return "station";
   if (isMaster()) return "mine";
   if (isEngineer()) return "fleet";
+  if (isCampManager()) return "camp";
   return isAdmin() ? "users" : "home";
 }
 
@@ -154,9 +159,10 @@ function viewAllowed(view) {
   if (isAdmin()) return ADMIN_VIEWS.includes(view);
   if (isMaster()) return MASTER_VIEWS.includes(view) || FLEET_VIEWS.includes(view);
   if (isEngineer()) return FLEET_VIEWS.includes(view);
+  if (isCampManager()) return CAMP_VIEWS.includes(view);
   if (isHr() && HR_VIEWS.includes(view)) return true;
   if (isKitchen() && KITCHEN_VIEWS.includes(view)) return true;
-  return ![...ADMIN_VIEWS, ...HR_VIEWS, ...KITCHEN_VIEWS, ...MASTER_VIEWS, ...FLEET_VIEWS, "station"].includes(view);
+  return ![...ADMIN_VIEWS, ...HR_VIEWS, ...KITCHEN_VIEWS, ...MASTER_VIEWS, ...CAMP_VIEWS, ...FLEET_VIEWS, "station"].includes(view);
 }
 
 /** Staff who work shifts: regular users, HR and the kitchen alike. */
@@ -2185,7 +2191,7 @@ function flipHint() {
 }
 
 function roleBadge(role) {
-  return `<span class="role-badge${role === "admin" ? " is-admin" : role === "whiteking" ? " is-wk" : role === "hr" ? " is-hr" : role === "kitchen" ? " is-kitchen" : role === "master" ? " is-master" : role === "engineer" ? " is-engineer" : ""}">${ROLE_LABEL[role] || role}</span>`;
+  return `<span class="role-badge${role === "admin" ? " is-admin" : role === "whiteking" ? " is-wk" : role === "hr" ? " is-hr" : role === "kitchen" ? " is-kitchen" : role === "master" ? " is-master" : role === "engineer" ? " is-engineer" : role === "campmgr" ? " is-campmgr" : ""}">${ROLE_LABEL[role] || role}</span>`;
 }
 
 function statusBadge(status) {
@@ -5376,7 +5382,7 @@ function render() {
     return;
   }
   fleetStop();
-  if (MASTER_VIEWS.includes(state.view)) {
+  if (MASTER_VIEWS.includes(state.view) || CAMP_VIEWS.includes(state.view)) {
     stage.innerHTML = masterView(state.view);
     masterStart();
     return;

@@ -81,6 +81,7 @@ import {
 } from "./lib/mine.mjs";
 import { seedMine } from "./lib/mineseed.mjs";
 import { FLEET_ROLES, fleetView, fleetWorkorder, seedFleet, setDispatch } from "./lib/fleet.mjs";
+import { CAMP_COLLECTIONS, CAMP_ROLE, campView, seedCamp } from "./lib/camp.mjs";
 import { COLLECTIONS, payrollRows } from "./public/js/minecore.js";
 import { applyRestUpdate, cleanPlan, ensureWorkplan, patternsFor, restBlock, restUpdates, leaveRequest, noteAttempt, pruneLeaves } from "./lib/workplan.mjs";
 import { faceOf, faceProgress, frameBuffer, photoFace, warmFace } from "./lib/face.mjs";
@@ -1987,8 +1988,6 @@ const MASTER_ACTIONS = [
   [/^\/api\/master\/muster\/end$/, (db, body, me, now) => endMuster(db, me.id, now)],
   [/^\/api\/master\/sos\/([\w-]+)$/, (db, body, me, now, m) => updateSos(db, m[1], body.status, me.id, now)],
   [/^\/api\/master\/visitors\/([\w-]+)\/site$/, (db, body, me, now, m) => setVisitorSite(db, m[1], body.on, now)],
-  [/^\/api\/master\/camp\/auto$/, (db, body, me, now) => autoBeds(db, now)],
-  [/^\/api\/master\/camp\/bed$/, (db, body) => setBed(db, body.room, body.index, body.uid || null)],
   [/^\/api\/master\/settings$/, (db, body) => saveSettings(db, body)],
   [/^\/api\/master\/wx-sim$/, (db, body, me, now) => setWxSim(db, body, now)],
 ];
@@ -2019,6 +2018,86 @@ async function routeFleet(req, res, url, me) {
   json(res, result.error ? result.status || 400 : 200, result);
 }
 
+/** Monthly hours per shift worker for the payroll report. */
+async function sendPayroll(res, url) {
+  const month = url.searchParams.get("month") || localParts().date.slice(0, 7);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    json(res, 400, { error: "Сар буруу" });
+    return;
+  }
+  const now = Date.now();
+  const rows = await inspect((db) =>
+    payrollRows({
+      users: db.users.filter((user) => STAFF_ROLES.includes(user.role)),
+      events: db.attendance.events,
+      plans: db.shiftPlans,
+      leaves: db.leaves || [],
+      month,
+      now,
+      since: db.attendance.historyFrom || null,
+      sinceAt: db.attendance.resetAt ? Date.parse(db.attendance.resetAt) : null,
+    }),
+  );
+  json(res, 200, { month, rows });
+}
+
+/**
+ * Create, edit and delete of mine records under `${base}/c/<collection>[/<id>]`, limited to the collections
+ * `allowed` says this role owns; answers with the role's refreshed view. Returns false when the path is not one.
+ */
+async function routeRecords(req, res, me, base, pathname, allowed, viewOf) {
+  const record = pathname.slice(base.length).match(/^\/c\/(\w+)(?:\/([\w-]+))?$/);
+  if (!record || !Object.hasOwn(COLLECTIONS, record[1]) || !allowed(record[1])) return false;
+  const [, name, id] = record;
+  const now = Date.now();
+  const body = req.method === "POST" || req.method === "PUT" ? await readBody(req, 700_000) : {};
+  const result = await update((db) => {
+    ensureMine(db);
+    let outcome;
+    if (req.method === "POST" && !id) outcome = createRecord(db, name, body, { by: me.id, now });
+    else if (req.method === "PUT" && id) outcome = updateRecord(db, name, id, body, { by: me.id, now });
+    else if (req.method === "DELETE" && id) outcome = deleteRecord(db, name, id);
+    else outcome = { error: "Буруу хүсэлт", status: 405 };
+    if (outcome.error) return outcome;
+    if (mineDue(db, now)) mineTick(db, now);
+    return { item: outcome.item, view: viewOf(db, now) };
+  });
+  json(res, result.error ? result.status || 400 : 200, result);
+  return true;
+}
+
+const CAMP_ACTIONS = {
+  "/api/camp/beds/auto": (db, body, me, now) => autoBeds(db, now),
+  "/api/camp/beds": (db, body) => setBed(db, body.room, body.index, body.uid || null),
+};
+
+async function routeCamp(req, res, url, me) {
+  const now = Date.now();
+  const { pathname } = url;
+  if (req.method === "GET" && pathname === "/api/camp") {
+    json(res, 200, await inspect((db) => campView(db, now)));
+    return;
+  }
+  if (req.method === "GET" && pathname === "/api/camp/payroll") {
+    await sendPayroll(res, url);
+    return;
+  }
+  if (await routeRecords(req, res, me, "/api/camp", pathname, (name) => CAMP_COLLECTIONS.includes(name), campView)) return;
+  const action = req.method === "POST" && CAMP_ACTIONS[pathname];
+  if (!action) {
+    json(res, 404, { error: "Олдсонгүй" });
+    return;
+  }
+  const body = await readBody(req);
+  const result = await update((db) => {
+    ensureMine(db);
+    const outcome = action(db, body, me, now);
+    if (outcome.error) return outcome;
+    return { ...outcome, view: campView(db, now) };
+  });
+  json(res, result.error ? result.status || 400 : 200, result);
+}
+
 async function routeMaster(req, res, url, me) {
   const now = Date.now();
   const { pathname } = url;
@@ -2038,45 +2117,7 @@ async function routeMaster(req, res, url, me) {
     res.end(Buffer.from(data[2], "base64"));
     return;
   }
-  if (req.method === "GET" && pathname === "/api/master/payroll") {
-    const month = url.searchParams.get("month") || localParts().date.slice(0, 7);
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
-      json(res, 400, { error: "Сар буруу" });
-      return;
-    }
-    const rows = await inspect((db) =>
-      payrollRows({
-        users: db.users.filter((user) => STAFF_ROLES.includes(user.role)),
-        events: db.attendance.events,
-        plans: db.shiftPlans,
-        leaves: db.leaves || [],
-        month,
-        now,
-        since: db.attendance.historyFrom || null,
-        sinceAt: db.attendance.resetAt ? Date.parse(db.attendance.resetAt) : null,
-      }),
-    );
-    json(res, 200, { month, rows });
-    return;
-  }
-  const record = pathname.match(/^\/api\/master\/c\/(\w+)(?:\/([\w-]+))?$/);
-  if (record && Object.hasOwn(COLLECTIONS, record[1])) {
-    const [, name, id] = record;
-    const body = req.method === "POST" || req.method === "PUT" ? await readBody(req, 700_000) : {};
-    const result = await update((db) => {
-      ensureMine(db);
-      let outcome;
-      if (req.method === "POST" && !id) outcome = createRecord(db, name, body, { by: me.id, now });
-      else if (req.method === "PUT" && id) outcome = updateRecord(db, name, id, body, { by: me.id, now });
-      else if (req.method === "DELETE" && id) outcome = deleteRecord(db, name, id);
-      else outcome = { error: "Буруу хүсэлт", status: 405 };
-      if (outcome.error) return outcome;
-      if (mineDue(db, now)) mineTick(db, now);
-      return { item: outcome.item, view: masterView(db, now) };
-    });
-    reply(result);
-    return;
-  }
+  if (await routeRecords(req, res, me, "/api/master", pathname, (name) => !CAMP_COLLECTIONS.includes(name), masterView)) return;
   if (req.method === "POST") {
     for (const [pattern, action] of MASTER_ACTIONS) {
       const match = pathname.match(pattern);
@@ -2208,6 +2249,14 @@ async function routeApi(req, res, url) {
         return;
       }
       await routeMaster(req, res, url, me);
+      return;
+    }
+    if (url.pathname === "/api/camp" || url.pathname.startsWith("/api/camp/")) {
+      if (me.role !== CAMP_ROLE) {
+        json(res, 403, { error: "Зөвхөн кэмп менежерт зориулсан" });
+        return;
+      }
+      await routeCamp(req, res, url, me);
       return;
     }
     if (url.pathname === "/api/fleet" || url.pathname.startsWith("/api/fleet/")) {
@@ -2716,6 +2765,8 @@ update((db) => {
   if (mine) console.log(`Уурхайн туршилтын өгөгдөл: ${mine.records} бүртгэл${mine.errors.length ? ` · алгассан: ${mine.errors.slice(0, 3).join("; ")}` : ""}`);
   const fleet = seedFleet(db);
   if (fleet?.added) console.log(`Уурхайн техникийн самбар: ${fleet.added} нэмэлт техник`);
+  const camp = seedCamp(db);
+  if (camp?.added) console.log(`Кэмп: ${camp.added} туршилтын камер`);
 })
   .then(() => update((db) => ensureFresh(db, true)))
   .catch((error) => console.error(error.message))
