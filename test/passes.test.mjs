@@ -124,6 +124,8 @@ test("each role sees only its kinds; the camp sees approved arrivals and departu
   assert.deepEqual(passesView(db, "hr", NOW).passes.map((pass) => pass.id), [arrive.id]);
   const board = passesView(db, "engineer", NOW);
   assert.equal(board.passes.length, 2);
+  assert.equal(board.inbox, 2, "the board carries the menu count");
+  assert.equal(passesView(db, "hr", NOW).inbox, 1);
   assert.deepEqual(board.users.map((user) => user.id).sort(), ["usr_a", "usr_b"]);
   assert.ok(!JSON.stringify(board).includes("passwordHash"));
   assert.equal(campView(db, NOW).passes.length, 0, "not approved yet");
