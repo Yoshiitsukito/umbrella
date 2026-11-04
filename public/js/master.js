@@ -22,6 +22,7 @@ import {
   EQUIP_CERT,
   EQUIP_STATUS,
   EQUIP_TYPES,
+  HSE_ROUTES,
   INCIDENT_KINDS,
   INCIDENT_STATUS,
   INDUCTION_ITEMS,
@@ -46,6 +47,7 @@ import {
   WX_METRICS,
   coalByType,
   crewChange,
+  defaultRoutes,
   defaultValue,
   expiryState,
   fieldShown,
@@ -94,6 +96,7 @@ export const CAMP_VIEWS = ["camp"];
 export const GUARD_VIEWS = ["guard"];
 export const CAMP_ROLE = "campmgr";
 const GUARD_ROLE = "security";
+const HSE_ROLE = "hsemgr";
 /** The pages each role opens here; the director reads all of them except camp and security. */
 export const ROLE_VIEWS = {
   master: MASTER_VIEWS,
@@ -104,6 +107,7 @@ export const ROLE_VIEWS = {
   envmgr: ["env"],
   engineer: ["procure"],
   maint: ["maint"],
+  hsemgr: ["hse", "skills"],
   director: ["exec", "finance", "coal", "env", "maint", ...MASTER_VIEWS],
 };
 export const MINE_VIEWS = [...new Set(Object.values(ROLE_VIEWS).flat())];
@@ -124,6 +128,7 @@ const OWNED = {
   shipmgr: (name) => areaOf(name) === "coal",
   envmgr: (name) => areaOf(name) === "env",
   maint: (name) => MAINT_OWNS.includes(name),
+  hsemgr: (name) => ["hse", "skills"].includes(areaOf(name)),
 };
 const canWrite = (name) => Boolean(OWNED[role()]?.(name));
 
@@ -286,6 +291,7 @@ const ICON = {
   photo: `<rect x="3.5" y="6" width="17" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.3"/><path d="M8.5 6 10 4h4l1.5 2"/>`,
   bed: `<path d="M3 18.5V7M3 14h18v4.5M21 14v-2.5a3 3 0 0 0-3-3h-7V14"/><circle cx="7" cy="11" r="1.8"/>`,
   play: `<path d="M8 5.5v13l10-6.5z"/>`,
+  send: `<path d="M20.5 3.5 3.5 10.5l7 3 3 7z"/><path d="m20.5 3.5-10 10"/>`,
   stop: `<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/>`,
   bell: `<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>`,
   map: `<path d="M12 21s6.5-5.8 6.5-11a6.5 6.5 0 0 0-13 0C5.5 15.2 12 21 12 21z"/><circle cx="12" cy="10" r="2.3"/>`,
@@ -393,7 +399,7 @@ const records = (name) => m.data?.[COLLECTIONS[name].area]?.[name] || [];
 const recordOf = (name, id) => records(name).find((item) => item.id === id) || null;
 const userOf = (uid) => m.data?.users.find((user) => user.id === uid) || null;
 const nameOf = (uid) => userOf(uid)?.displayName || "–";
-const staffUsers = () => (m.data?.users || []).filter((user) => user.role !== "master");
+const staffUsers = () => (m.data?.users || []).filter((user) => user.role !== "master" && user.role !== HSE_ROLE);
 const num = (value) => (Number.isFinite(Number(value)) ? Number(value).toLocaleString("en-US") : "–");
 const pct = (value) => (value == null || !Number.isFinite(value) ? "–" : `${Math.round(value * 100)}%`);
 const positionOf = (uid) => records("posts").find((item) => item.uid === uid)?.position || null;
@@ -561,7 +567,20 @@ function alertSos() {
 export function masterView(view) {
   if (!m.data) return `<div class="admin-page m-page"><section class="panel"><p class="muted">Ачаалж байна…</p></section></div>`;
   const body = view === "mine" ? dashboard() : tabbed(view);
-  return `<div class="admin-page m-page${readOnly() ? " is-readonly" : ""}">${hero(view)}${m.data.hse ? alertStrip() : ""}${body}</div>`;
+  return `<div class="admin-page m-page${readOnly() ? " is-readonly" : ""}">${hero(view)}${noticeStrip()}${m.data.hse ? alertStrip() : ""}${body}</div>`;
+}
+
+/** Notices sent to this manager, such as HSE's decisions; management roles have no home page to read them on. */
+function noticeStrip() {
+  const notices = [...(ctx.state.live?.notices || [])].reverse();
+  if (!notices.length) return "";
+  const rows = notices
+    .map((item) => `<li class="m-notice"><span class="m-notice-ico">${ico("bell")}</span><div><b>${esc(item.text)}</b><small>${fmtMoment(item.at)}</small></div><button class="icon-btn" type="button" data-action="notice-seen" data-id="${esc(item.id)}" title="Уншсан" aria-label="Уншсан">${ico("check")}</button></li>`)
+    .join("");
+  return `<section class="panel m-notices notice-bar" aria-label="Мэдэгдэл">
+      <header><b>${ico("bell")}Танд ирсэн мэдэгдэл · ${notices.length}</b>${notices.length > 1 ? `<button class="chip" type="button" data-action="notice-seen">${ico("check")}Бүгдийг уншсан</button>` : ""}</header>
+      <ul>${rows}</ul>
+    </section>`;
 }
 
 function hero(view) {
@@ -887,7 +906,8 @@ const EXTRA_COLS = {
     const status = item.hseStatus || "new";
     const label = status === "acted" && item.measure ? `${VIOLATION_STATUS.acted} · ${MEASURES[item.measure]}` : VIOLATION_STATUS[status];
     const note = item.hseNote || (item.hseBy ? `${item.hseBy} · ${fmtMoment(item.hseAt)}` : "");
-    return `<span class="m-who">${badge(label, HSE_TONE[status])}${note ? `<small title="${esc(item.hseBy ? `${item.hseBy} · ${fmtMoment(item.hseAt)}` : "")}">${esc(note)}</small>` : ""}</span>`;
+    const routes = (item.routes || []).map((route) => HSE_ROUTES[route]).filter(Boolean);
+    return `<span class="m-who">${badge(label, HSE_TONE[status])}${note ? `<small title="${esc(item.hseBy ? `${item.hseBy} · ${fmtMoment(item.hseAt)}` : "")}">${esc(note)}</small>` : ""}${routes.length ? `<small class="m-routes">${ico("send", "m-ico tiny")}${esc(routes.join(", "))}</small>` : ""}</span>`;
   }]],
   capex: [["Нийт дүн", (item) => `<b>${esc(money(requestValue("capex", item)))}</b>`], ["Явц", stageCell]],
   disposals: [["Дансны үнэ", (item) => {
@@ -1029,7 +1049,7 @@ function rowActions(name, item) {
   if (name === "violations") {
     if (item.photo) buttons.push(button("photo", "photo", "Нотлох зураг"));
     if (!isGuard()) {
-      buttons.push(button("vio-decide", "gavel", "Арга хэмжээ авах"));
+      if (role() === HSE_ROLE) buttons.push(button("vio-decide", "gavel", "Шийдвэрлэх, илгээх"));
       return `<div class="acts">${buttons.join("")}</div>`;
     }
     if ((item.hseStatus || "new") !== "new") return `<div class="acts">${buttons.join("")}</div>`;
@@ -1594,6 +1614,8 @@ function openViolationDecide(id) {
   if (!item) return;
   const status = item.hseStatus && item.hseStatus !== "new" ? item.hseStatus : "acted";
   const choice = (value, label, hint) => `<label class="m-choice"><input type="radio" name="status" value="${value}"${status === value ? " checked" : ""} /><span><b>${esc(label)}</b><small>${esc(hint)}</small></span></label>`;
+  const chosen = new Set(item.routes || defaultRoutes(status, item.measure, item.party));
+  const route = ([key, label]) => `<label class="m-route"><input type="checkbox" name="routes" value="${key}"${chosen.has(key) ? " checked" : ""} /><span>${esc(label)}</span></label>`;
   const body = `<form class="m-form m-vio-form" novalidate>
       <div class="m-vio-sum">
         ${badge(SEVERITIES[item.severity], TONE.severity[item.severity])}
@@ -1611,16 +1633,23 @@ function openViolationDecide(id) {
         <label class="m-field" data-vio="acted"><span>Арга хэмжээ *</span><select name="measure">${options(Object.entries(MEASURES), item.measure, "Сонгоно уу")}</select></label>
         <label class="m-field is-wide"><span>Тайлбар</span><textarea name="note" maxlength="300" rows="3">${esc(item.hseNote || "")}</textarea></label>
       </div>
-      ${item.party === "staff" ? `<p class="m-hint">${ico("bell")}<span>Арга хэмжээ авбал ажилтанд мэдэгдэл очно.</span></p>` : ""}
+      <fieldset class="m-routes-set"><legend>${ico("send")}Шийдвэрийг илгээх</legend><div class="m-route-list">${Object.entries(HSE_ROUTES).map(route).join("")}</div></fieldset>
+      <p class="m-hint">${ico("bell")}<span>${item.party === "staff" ? "Арга хэмжээ авбал ажилтанд өөрт нь мэдэгдэл очно. " : ""}Сонгосон хэсгүүдэд шийдвэр мэдэгдлээр очно, «Хэлтсийн дарга» нь ажилтны хэлтсийн даргад.</span></p>
       <p class="form-error m-form-error" role="alert" hidden></p>
       <div class="modal-actions"><button class="chip" type="button" data-close>Болих</button><button class="primary" type="submit">${ico("check")}Хадгалах</button></div>
     </form>`;
   const wrap = ctx.openModal({ shield: ico("gavel"), title: "ХАБЭА · зөрчил", sub: `${fmtMoment(item.at)} · хамгаалалтаас`, body, className: "m-modal" });
   if (!wrap) return;
   const form = wrap.querySelector("form");
-  const sync = () => {
+  const boxes = [...form.querySelectorAll("input[name='routes']")];
+  let picked = Boolean(item.routes);
+  const sync = (event) => {
     const acted = form.elements.status.value === "acted";
     form.querySelector("[data-vio='acted']").hidden = !acted;
+    if (event?.target?.name === "routes") picked = true;
+    if (picked) return;
+    const routes = defaultRoutes(form.elements.status.value, form.elements.measure.value, item.party);
+    for (const box of boxes) box.checked = routes.includes(box.value);
   };
   sync();
   form.addEventListener("change", sync);
@@ -1631,10 +1660,11 @@ function openViolationDecide(id) {
     button.disabled = true;
     formError(form, "");
     try {
-      await send(`/api/master/violations/${encodeURIComponent(id)}/decide`, "POST", { status: form.elements.status.value, measure: form.elements.measure.value, note: form.elements.note.value });
+      const routes = boxes.filter((box) => box.checked).map((box) => box.value);
+      const result = await send(`/api/master/violations/${encodeURIComponent(id)}/decide`, "POST", { status: form.elements.status.value, measure: form.elements.measure.value, note: form.elements.note.value, routes });
       ctx.closeModal(true);
       setTimeout(() => paint(true), 260);
-      ctx.toast("ХАБЭА", "Шийдвэр хадгалагдлаа");
+      ctx.toast("ХАБЭА", result?.sent ? `Шийдвэр хадгалагдаж, ${result.sent} хүнд илгээгдлээ` : "Шийдвэр хадгалагдлаа");
     } catch (error) {
       formError(form, error.message);
       button.disabled = false;

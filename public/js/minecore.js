@@ -122,6 +122,19 @@ export const VIOLATION_KINDS = {
 /** The security officer's report is "new" until HSE takes it up and decides. */
 export const VIOLATION_STATUS = { new: "Шинэ", review: "ХАБЭА хянаж байна", acted: "Арга хэмжээ авсан", dismissed: "Үндэслэлгүй" };
 export const MEASURES = { warning: "Сануулга", training: "Давтан сургалт", fine: "Торгууль", suspend: "Ажлаас түр түдгэлзүүлэх", dismiss: "Ажлаас чөлөөлөх", other: "Бусад" };
+/** Who else hears HSE's decision on a violation, besides the worker it concerns. */
+export const HSE_ROUTES = { security: "Хамгаалалт", head: "Хэлтсийн дарга", hr: "Хүний нөөц", master: "Уурхайн мастер", campmgr: "Кэмп, гэрээт" };
+
+/** The usual recipients of a decision: security always, more as the measure weighs on pay, shifts or the contract. */
+export function defaultRoutes(status, measure, party = "staff") {
+  if (status !== "acted") return ["security"];
+  const routes = ["security"];
+  if (party === "staff") routes.push("head");
+  if (party === "staff" && ["fine", "suspend", "dismiss"].includes(measure)) routes.push("hr");
+  if (["training", "suspend", "dismiss"].includes(measure)) routes.push("master");
+  if (party === "contractor" || party === "visitor") routes.push("campmgr");
+  return routes;
+}
 export const CAPEX_KINDS = { equipment: "Хүнд техник", vehicle: "Тээврийн хэрэгсэл", tool: "Багаж, тоног төхөөрөмж", part: "Сэлбэг, материал", other: "Бусад" };
 export const DISPOSE_METHODS = { sell: "Худалдах", scrap: "Актлаж устгах", transfer: "Шилжүүлэх" };
 /** A purchase or write-off request goes chief engineer → finance → director; the server alone moves the stage. */

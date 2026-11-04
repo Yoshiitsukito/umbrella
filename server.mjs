@@ -60,6 +60,8 @@ import {
   deleteRecord,
   endMuster,
   ensureMine,
+  HSE_ROLE,
+  MASTER_ROLE,
   masterView,
   mineDue,
   mineHold,
@@ -2025,7 +2027,7 @@ const MASTER_ACTIONS = [
   [/^\/api\/master\/visitors\/([\w-]+)\/site$/, (db, body, me, now, m) => setVisitorSite(db, m[1], body.on, now)],
   [/^\/api\/master\/settings$/, (db, body) => saveSettings(db, body)],
   [/^\/api\/master\/wx-sim$/, (db, body, me, now) => setWxSim(db, body, now)],
-  [/^\/api\/master\/violations\/([\w-]+)\/decide$/, (db, body, me, now, m) => decideViolation(db, m[1], body, me, now)],
+  [/^\/api\/master\/violations\/([\w-]+)\/decide$/, (db, body, me, now, m) => decideViolation(db, m[1], body, me, now), [HSE_ROLE]],
 ];
 
 const FLEET_ACTIONS = {
@@ -2229,11 +2231,16 @@ async function routeMaster(req, res, url, me) {
     await sendPhoto(res, photo[1], () => true);
     return;
   }
-  if (await routeRecords(req, res, me, "/api/master", pathname, (name) => MASTER_AREAS.includes(COLLECTIONS[name].area), masterView)) return;
+  const areas = me.role === HSE_ROLE ? HSE_AREAS : MASTER_AREAS;
+  if (await routeRecords(req, res, me, "/api/master", pathname, (name) => areas.includes(COLLECTIONS[name].area), masterView)) return;
   if (req.method === "POST") {
-    for (const [pattern, action] of MASTER_ACTIONS) {
+    for (const [pattern, action, roles = MINE_ADMIN_ROLES] of MASTER_ACTIONS) {
       const match = pathname.match(pattern);
       if (!match) continue;
+      if (!roles.includes(me.role)) {
+        json(res, 403, { error: "Зөрчлийг ХАБЭА менежер шийдвэрлэнэ" });
+        return;
+      }
       const body = await readBody(req);
       const result = await update((db) => {
         ensureMine(db);
@@ -2250,6 +2257,9 @@ async function routeMaster(req, res, url, me) {
 }
 
 const MASTER_AREAS = ["hse", "skills", "ops"];
+const HSE_AREAS = ["hse", "skills"];
+/** Roles that open the MASTER pages; the HSE manager keeps to safety and competency records. */
+const MINE_ADMIN_ROLES = [MASTER_ROLE, HSE_ROLE];
 const decideAction = (db, body, me, now, match) => decideRequest(db, match[1], match[2], { role: me.role, me, ok: body.ok === true, note: body.note, now });
 const DECIDE_PATH = (base) => new RegExp(`^${base}/requests/(capex|disposals)/([\\w-]+)/decide$`);
 
@@ -2423,8 +2433,8 @@ async function routeApi(req, res, url) {
       return;
     }
     if (url.pathname === "/api/master" || url.pathname.startsWith("/api/master/")) {
-      if (me.role !== "master") {
-        json(res, 403, { error: "Зөвхөн уурхайн мастерт зориулсан" });
+      if (!MINE_ADMIN_ROLES.includes(me.role)) {
+        json(res, 403, { error: "Зөвхөн уурхайн мастер, ХАБЭА менежерт зориулсан" });
         return;
       }
       await routeMaster(req, res, url, me);

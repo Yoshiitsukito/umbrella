@@ -127,10 +127,11 @@ const ROLE_LABEL = {
   shipmgr: "Ачилтын менежер",
   envmgr: "Байгаль орчны менежер",
   maint: "Засварын мастер",
+  hsemgr: "ХАБЭА менежер",
 };
-const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer", "campmgr", "security", "finance", "director", "shipmgr", "envmgr", "maint"];
+const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer", "campmgr", "security", "finance", "director", "shipmgr", "envmgr", "maint", "hsemgr"];
 /** The page each management role lands on. */
-const ROLE_HOME = { master: "mine", engineer: "fleet", campmgr: "camp", security: "guard", finance: "finance", director: "exec", shipmgr: "coal", envmgr: "env", maint: "maint" };
+const ROLE_HOME = { master: "mine", engineer: "fleet", campmgr: "camp", security: "guard", finance: "finance", director: "exec", shipmgr: "coal", envmgr: "env", maint: "maint", hsemgr: "hse" };
 const STAFF_ROLES = ["user", "hr", "kitchen"];
 const ADMIN_VIEWS = ["users", "account", "card", "whiteking"];
 const HR_VIEWS = ["staff", "today"];
