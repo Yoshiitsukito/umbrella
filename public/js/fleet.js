@@ -316,13 +316,13 @@ function mapStatic() {
     <g class="fl-place"><circle cx="${fuel.x}" cy="${fuel.y}" r="26" /><rect x="${fuel.x + 32}" y="${fuel.y - 14}" width="34" height="28" rx="4" /></g>${label(fuel, 70)}
     <g class="fl-place">${[0, 1, 2].map((row) => [0, 1, 2].map((col) => `<rect x="${camp.x + 20 + col * 70}" y="${camp.y - 120 + row * 46}" width="56" height="30" rx="4" />`).join("")).join("")}</g>${label({ ...camp, x: camp.x + 110 }, -140)}`;
   return `<defs>
-      <radialGradient id="fl-ground" cx="50%" cy="40%" r="80%"><stop offset="0" stop-color="#16231c" /><stop offset="1" stop-color="#070c09" /></radialGradient>
-      <filter id="fl-noise" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.0045" numOctaves="4" seed="11" /><feColorMatrix values="0 0 0 0 0.25  0 0 0 0 0.36  0 0 0 0 0.3  0 0 0 0.9 -0.32" /></filter>
+      <radialGradient id="fl-ground" cx="50%" cy="40%" r="80%"><stop offset="0" class="fl-ground-a" /><stop offset="1" class="fl-ground-b" /></radialGradient>
+      <filter id="fl-noise" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.0045" numOctaves="4" seed="11" /><feColorMatrix values="0 0 0 0 0.3  0 0 0 0 0.3  0 0 0 0 0.3  0 0 0 0.9 -0.32" /></filter>
       <filter id="fl-glow" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-      <pattern id="fl-gridline" width="250" height="250" patternUnits="userSpaceOnUse"><path d="M250 0H0V250" fill="none" stroke="#39ff88" stroke-opacity="0.06" stroke-width="2" /></pattern>
+      <pattern id="fl-gridline" width="250" height="250" patternUnits="userSpaceOnUse"><path class="fl-gridline" d="M250 0H0V250" /></pattern>
     </defs>
     <rect x="${x0 - 400}" y="${y0 - 400}" width="${w + 800}" height="${h + 800}" fill="url(#fl-ground)" />
-    <rect x="${x0 - 400}" y="${y0 - 400}" width="${w + 800}" height="${h + 800}" filter="url(#fl-noise)" opacity="0.8" />
+    <rect class="fl-noise" x="${x0 - 400}" y="${y0 - 400}" width="${w + 800}" height="${h + 800}" filter="url(#fl-noise)" />
     <rect x="${x0 - 400}" y="${y0 - 400}" width="${w + 800}" height="${h + 800}" fill="url(#fl-gridline)" />
     <g class="fl-dump">${lifts}</g><text class="fl-zone-label" x="${dump.cx}" y="${dump.cy - dump.ry - 70}">Хөрсний овоолго</text>
     ${pits}
@@ -606,7 +606,7 @@ function insight(now) {
   const items = suggestions(now).slice(0, 5);
   const head = Math.abs(pace) < 0.02 ? "Олборлолт төлөвлөгөөний дагуу явж байна" : `Нүүрсний олборлолт төлөвлөгөөнөөс ${Math.abs(Math.round(pace * 100))}% ${pace > 0 ? "илүү" : "хоцорч"} байна`;
   return `<div class="fl-ai-top">
-      <svg class="fl-rock" viewBox="0 0 120 90" aria-hidden="true"><defs><linearGradient id="fl-rock-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3a4a40" /><stop offset="1" stop-color="#0c120f" /></linearGradient></defs><path d="M10 70L24 28L52 12L86 20L110 48L100 76L58 84Z" fill="url(#fl-rock-g)" stroke="#39ff88" stroke-opacity=".5" /><path d="M24 28L58 44L86 20M58 44L58 84M58 44L110 48" stroke="#39ff88" stroke-opacity=".25" fill="none" /></svg>
+      <svg class="fl-rock" viewBox="0 0 120 90" aria-hidden="true"><defs><linearGradient id="fl-rock-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="fl-rock-a" /><stop offset="1" class="fl-rock-b" /></linearGradient></defs><path class="fl-rock-body" d="M10 70L24 28L52 12L86 20L110 48L100 76L58 84Z" fill="url(#fl-rock-g)" /><path class="fl-rock-edge" d="M24 28L58 44L86 20M58 44L58 84M58 44L110 48" /></svg>
       <div><span class="fl-ai-tag">${ico("spark", "fl-ico tiny")}Ухаалаг зөвлөх</span><b class="${pace >= 0 ? "is-ok" : "is-warn"}">${head}</b></div>
     </div>
     <div class="fl-ai-stats">
