@@ -77,9 +77,12 @@ import {
   stopLone,
   updateRecord,
   updateSos,
+  sweepService,
   workerMine,
 } from "./lib/mine.mjs";
 import { seedMine } from "./lib/mineseed.mjs";
+import { MAINT_COLLECTIONS, MAINT_ROLE, maintView, seedMaint } from "./lib/maint.mjs";
+import { workforceOf } from "./lib/workforce.mjs";
 import { FLEET_ROLES, fleetView, fleetWorkorder, seedFleet, setDispatch } from "./lib/fleet.mjs";
 import { CAMP_COLLECTIONS, CAMP_ROLE, campView, seedCamp } from "./lib/camp.mjs";
 import { GUARD_COLLECTIONS, GUARD_ROLE, decideViolation, guardView } from "./lib/guard.mjs";
@@ -985,6 +988,7 @@ function hrView(db) {
       leaves: (db.leaves || []).filter((item) => ids.has(item.uid)),
     },
     announcements: pruneAnnouncements(db.announcements || []).reverse(),
+    workforce: workforceOf(db),
   };
 }
 
@@ -2269,6 +2273,7 @@ const ROLE_ROUTES = [
   { role: DIRECTOR_ROLE, base: "/api/exec", deny: "Зөвхөн гүйцэтгэх захиралд зориулсан", viewOf: execView, report: true, photos: true, actions: [[DECIDE_PATH("/api/exec"), decideAction]] },
   { role: SHIP_ROLE, base: "/api/coal", deny: "Зөвхөн ачилтын менежерт зориулсан", viewOf: coalView, owns: (name) => COAL_COLLECTIONS.includes(name), actions: [[/^\/api\/coal\/settings$/, (db, body) => saveCoalSettings(db, body)]] },
   { role: ENV_ROLE, base: "/api/env", deny: "Зөвхөн байгаль орчны менежерт зориулсан", viewOf: envView, owns: (name) => ENV_COLLECTIONS.includes(name) },
+  { role: MAINT_ROLE, base: "/api/maint", deny: "Зөвхөн засварын мастерт зориулсан", viewOf: maintView, owns: (name) => MAINT_COLLECTIONS.includes(name) },
   { role: ENGINEER_ROLE, base: "/api/procure", deny: "Худалдан авах, актлах хүсэлтийг уулын ахлах инженер гаргана", viewOf: procureView, owns: (name) => REQUEST_COLLECTIONS.includes(name) },
 ];
 
@@ -2964,6 +2969,12 @@ update((db) => {
   if (camp?.added) console.log(`Кэмп: ${camp.added} туршилтын камер`);
   const biz = seedBiz(db);
   if (biz) console.log(`Санхүү, нүүрс, байгаль орчин: ${biz.records} туршилтын бүртгэл`);
+  const maint = seedMaint(db);
+  if (maint) console.log(`Засвар: ${maint.readings} мото цагийн заалт, ${maint.services} хийгдсэн төлөвлөгөөт засвар, ${maint.split} тайланд нүүрсний ангилал`);
+  if (db.mineSeed) {
+    const planned = sweepService(db);
+    if (planned) console.log(`Төлөвлөгөөт засвар: ${planned} техник мото цагаар засварт орлоо`);
+  }
 })
   .then(() => update((db) => ensureFresh(db, true)))
   .catch((error) => console.error(error.message))

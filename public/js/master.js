@@ -16,6 +16,7 @@ import {
   CAMERA_ZONES,
   CAPA_STATUS,
   CERT_TYPES,
+  COAL_TYPES,
   COLLECTIONS,
   CONTRACT_STATUS,
   EQUIP_CERT,
@@ -33,6 +34,7 @@ import {
   CRITICAL_ITEMS,
   PRIORITIES,
   SEVERITIES,
+  SERVICE_SOON_HOURS as SOON_HOURS,
   SHIFTS,
   SOS_KINDS,
   SOS_STATUS,
@@ -42,6 +44,7 @@ import {
   VISITOR_KINDS,
   WO_STATUS,
   WX_METRICS,
+  coalByType,
   crewChange,
   defaultValue,
   expiryState,
@@ -100,10 +103,12 @@ export const ROLE_VIEWS = {
   shipmgr: ["coal"],
   envmgr: ["env"],
   engineer: ["procure"],
-  director: ["exec", "finance", "coal", "env", ...MASTER_VIEWS],
+  maint: ["maint"],
+  director: ["exec", "finance", "coal", "env", "maint", ...MASTER_VIEWS],
 };
 export const MINE_VIEWS = [...new Set(Object.values(ROLE_VIEWS).flat())];
-const API_BASE = { campmgr: "/api/camp", security: "/api/guard", finance: "/api/finance", shipmgr: "/api/coal", envmgr: "/api/env", engineer: "/api/procure", director: "/api/exec" };
+const API_BASE = { campmgr: "/api/camp", security: "/api/guard", finance: "/api/finance", shipmgr: "/api/coal", envmgr: "/api/env", engineer: "/api/procure", maint: "/api/maint", director: "/api/exec" };
+const MAINT_OWNS = ["meters", "workorders", "equipment"];
 const role = () => ctx?.state.me?.role || "";
 const isGuard = () => role() === GUARD_ROLE;
 const readOnly = () => role() === "director";
@@ -118,6 +123,7 @@ const OWNED = {
   engineer: (name) => REQUESTS.includes(name),
   shipmgr: (name) => areaOf(name) === "coal",
   envmgr: (name) => areaOf(name) === "env",
+  maint: (name) => MAINT_OWNS.includes(name),
 };
 const canWrite = (name) => Boolean(OWNED[role()]?.(name));
 
@@ -148,6 +154,7 @@ const TABS = {
     ["assigns", "Хуваарилалт", "assign"],
     ["prestarts", "Pre-start", "checklist"],
     ["workorders", "Засвар", "wrench"],
+    ["meters", "Мото цаг", "gauge"],
     ["fuel", "Түлш", "fuel"],
     ["stock", "Агуулах", "box"],
     ["moves", "Орлого, зарлага", "swap"],
@@ -190,6 +197,12 @@ const TABS = {
     ["capex", "Худалдан авах", "cart"],
     ["disposals", "Актлах, худалдах", "tag"],
   ],
+  maint: [
+    ["board", "Самбар", "grid"],
+    ["meters", "Мото цагийн заалт", "gauge"],
+    ["workorders", "Засварын захиалга", "wrench"],
+    ["equipment", "Техник", "truck"],
+  ],
 };
 
 const PAGES = {
@@ -204,6 +217,7 @@ const PAGES = {
   coal: ["Нүүрс · чанар, ачилт, борлуулалт", "coal"],
   env: ["Байгаль орчин", "leaf"],
   procure: ["Техник, багаж · хүсэлт", "cart"],
+  maint: ["Засвар үйлчилгээ · мото цаг", "wrench"],
 };
 
 const COL_ICON = {
@@ -589,6 +603,16 @@ const addBtn = (name, preset) => `<button class="primary m-add" type="button" da
 function heroStats(view) {
   const d = m.data;
   if (["finance", "exec", "coal", "env", "procure"].includes(view)) return bizHero(view);
+  if (view === "maint") {
+    const sum = d.maintSum;
+    return [
+      [sum.unplanned.length, "Төлөвлөгөөт бус засварт", sum.unplanned.length ? "neg" : ""],
+      [sum.planned.length, "Төлөвлөгөөт засварт"],
+      [sum.soon.length, `${SOON_HOURS} ц дотор засварт орох`],
+      [`${sum.counts.ready}/${sum.counts.total}`, "Бэлэн техник"],
+      [sum.counts.stale, "Заалт 48 ц+ өгөөгүй", sum.counts.stale ? "neg" : ""],
+    ];
+  }
   if (view === "guard") {
     const list = d.guard.violations;
     const today = list.filter((item) => localInput(Date.parse(item.at)).slice(0, 10) === d.today).length;
@@ -679,6 +703,7 @@ function tabAlert(tab) {
     medicals: () => d.skills.medicals.filter((item) => item.next && item.next < d.today).length,
     equipment: () => d.ops.equipment.filter((item) => item.status === "down").length,
     workorders: () => d.ops.workorders.filter((item) => item.status === "open").length,
+    meters: () => d.maintSum?.counts.stale || 0,
     stock: () => d.ops.stock.filter((item) => item.qty <= item.min).length,
   }[tab];
   return count ? count() : 0;
@@ -715,7 +740,7 @@ function tabBody(view, tab) {
     requests: requestsTab,
     approvals: requestsTab,
     revenue: revenueTab,
-    board: view === "coal" ? coalBoard : view === "env" ? envBoard : boardTab,
+    board: { coal: coalBoard, env: envBoard, maint: maintBoard }[view] || boardTab,
   };
   if (view === "procure") return requestsTab([tab]);
   return special[tab] ? special[tab]() : collectionPanel(tab);
@@ -766,7 +791,8 @@ const DECOR = {
   equipment: { status: (item) => badge(EQUIP_STATUS[item.status], TONE.equip[item.status]), hours: (item) => num(item.hours) },
   workorders: { status: (item) => badge(WO_STATUS[item.status], TONE.wo[item.status]), priority: (item) => badge(PRIORITIES[item.priority] || "–", TONE.priority[item.priority]) },
   stock: { qty: (item) => (item.qty <= item.min ? badge(`${num(item.qty)} · дутуу`, "bad") : num(item.qty)) },
-  handovers: { tonnes: (item) => num(item.tonnes) },
+  handovers: { tonnes: (item) => `<b>${num(item.tonnes)}</b>` },
+  meters: { hours: (item) => `<b>${num(item.hours)}</b> ц` },
   contractors: { until: (item) => (item.status === "active" ? expiryBadge(item.until) : esc(fmtDate(item.until))), status: (item) => badge(CONTRACT_STATUS[item.status], item.status === "active" ? "ok" : "") },
   wxRules: {
     threshold: (item) => (WX_METRICS[item.metric]?.op === "flag" ? "Илэрвэл" : `${WX_METRICS[item.metric]?.op === "lte" ? "≤" : "≥"} ${item.threshold} ${WX_METRICS[item.metric]?.unit || ""}`),
@@ -833,6 +859,18 @@ const EXTRA_COLS = {
     const end = item.closed ? Date.parse(item.closed) : Date.parse(m.data.now);
     return `${Math.max(0, (end - Date.parse(item.opened)) / 3600000).toFixed(1)} ц`;
   }]],
+  meters: [["Нэмэгдсэн", (item) => {
+    const before = records("meters").filter((row) => row.equipment === item.equipment && row.at < item.at).sort((a, b) => b.at.localeCompare(a.at))[0];
+    if (!before) return `<span class="muted">–</span>`;
+    const hours = (Date.parse(item.at) - Date.parse(before.at)) / 3600000;
+    return `<span class="m-who"><b>+${num(Math.round((item.hours - before.hours) * 10) / 10)} ц</b><small>${Math.round(hours)} цагийн дотор</small></span>`;
+  }], ["Засвар хүртэл", (item) => {
+    const machine = recordOf("equipment", item.equipment);
+    if (!machine) return "–";
+    const left = machine.serviceEvery - (item.hours - (machine.lastService || 0));
+    return left <= 0 ? badge(`${num(Math.round(-left))} ц хэтэрсэн`, "bad") : left <= SOON_HOURS ? badge(`${num(Math.round(left))} ц`, "warn") : `${num(Math.round(left))} ц`;
+  }]],
+  handovers: [["Нүүрсний ангилал", (item) => coalSplitCell(item)]],
   posts: [["Төлөв", (item) => ((m.data.holds[item.uid] || []).length ? badge("Карт хаагдсан", "bad") : badge("Хэвийн", "ok"))]],
   wxRules: [["Одоо", (item) => {
     const value = wxValue(m.data.weather, item.metric);
@@ -980,6 +1018,7 @@ function rowActions(name, item) {
     buttons.push(button("pass", "qr", "Түр нэвтрэх QR"));
     buttons.push(button("site", item.onSite ? "stop" : "play", item.onSite ? "Талбайгаас гарсан" : "Талбайд нэвтрүүлэх", ` data-on="${item.onSite ? "" : "1"}"`));
   }
+  if (name === "equipment" && canWrite("meters")) buttons.push(meterBtn(item));
   if (name === "equipment") buttons.push(`<button class="icon-btn" type="button" data-m="new" data-name="workorders" data-preset='${esc(JSON.stringify({ equipment: item.id }))}' title="Засварын захиалга" aria-label="Засварын захиалга">${ico("wrench")}</button>`);
   if (name === "assigns" && !records("prestarts").some((row) => row.equipment === item.equipment && row.date === item.date && row.shift === item.shift)) {
     const hours = recordOf("equipment", item.equipment)?.hours ?? "";
@@ -1859,10 +1898,94 @@ function boardTab() {
   const d = m.data;
   const assigns = d.ops.assigns.filter((item) => item.date === d.shiftDate && item.shift === d.shift);
   const lowStock = d.ops.stock.filter((item) => item.qty <= item.min);
-  return `${kpiPanel()}${fleetPanel()}
+  return `${kpiPanel()}${coalPanel()}${fleetPanel()}
     ${collectionPanel("assigns", { key: "board-assigns", title: `Энэ ээлжийн хуваарилалт · ${fmtDate(d.shiftDate)} ${SHIFTS[d.shift]}`, filter: (item) => assigns.includes(item) })}
     ${collectionPanel("workorders", { key: "board-wo", title: "Нээлттэй засвар", filter: (item) => item.status !== "done" })}
     ${lowStock.length ? collectionPanel("stock", { key: "board-stock", title: "Дутагдаж буй бараа", filter: (item) => item.qty <= item.min }) : ""}`;
+}
+
+const COAL_KEYS = Object.keys(COAL_TYPES);
+
+/** A shift report's tonnes as a stacked bar of coal types; reports without a split show as unclassified. */
+function coalSplitCell(item) {
+  const split = COAL_KEYS.map((key) => [key, Number(item[key]) || 0]).filter(([, tonnes]) => tonnes > 0);
+  if (!split.length) return `<span class="muted">Ангилаагүй</span>`;
+  const total = split.reduce((sum, [, tonnes]) => sum + tonnes, 0);
+  return `<span class="coal-split" title="${esc(split.map(([key, tonnes]) => `${COAL_TYPES[key]}: ${num(tonnes)} т`).join("\n"))}">${split.map(([key, tonnes]) => `<i class="is-${key}" style="flex:${tonnes / total}"></i>`).join("")}</span>`;
+}
+
+/** Coal mined by type for the shift, the last 7 days and the month, from the shift reports. */
+function coalPanel() {
+  const d = m.data;
+  const list = records("handovers");
+  const ranges = [
+    ["Өнөөдөр", d.shiftDate, d.shiftDate],
+    ["Сүүлийн 7 хоног", addDays(d.shiftDate, -6), d.shiftDate],
+    [`Энэ сар · ${Number(d.shiftDate.slice(8))} хоног`, `${d.shiftDate.slice(0, 8)}01`, d.shiftDate],
+  ];
+  return panel({ key: "coal-types", icon: "coal", title: "Олборлосон нүүрс · төрлөөр", body: coalTypes(ranges.map(([label, from, to]) => [label, coalByType(list, from, to)])) });
+}
+
+/** Rows of coal-type totals, each with a stacked bar and the tonnes of every type. */
+function coalTypes(rows) {
+  const legend = `<div class="coal-legend">${COAL_KEYS.map((key) => `<span><i class="is-${key}"></i>${esc(COAL_TYPES[key])}</span>`).join("")}<span><i class="is-unclassified"></i>Ангилаагүй</span></div>`;
+  const body = rows
+    .map(([label, sum]) => {
+      if (!sum.total) return `<div class="coal-row"><div class="coal-row-head"><b>${esc(label)}</b><span>0 т</span></div><p class="mt-none">Ээлжийн тайлан ирээгүй байна</p></div>`;
+      const parts = [...COAL_KEYS, "unclassified"].filter((key) => sum[key] > 0);
+      const bar = sum.total ? parts.map((key) => `<i class="is-${key}" style="flex:${sum[key] / sum.total}" title="${esc(COAL_TYPES[key] || "Ангилаагүй")}: ${num(Math.round(sum[key]))} т"></i>`).join("") : "";
+      const cells = COAL_KEYS.map((key) => `<span><b>${num(Math.round(sum[key]))} т</b><small>${sum.total ? Math.round((sum[key] / sum.total) * 100) : 0}%</small></span>`).join("");
+      return `<div class="coal-row"><div class="coal-row-head"><b>${esc(label)}</b><span>${num(Math.round(sum.total))} т</span></div><span class="coal-split is-wide">${bar || `<i class="is-empty" style="flex:1"></i>`}</span><div class="coal-cells">${cells}</div></div>`;
+    })
+    .join("");
+  return `${legend}<div class="coal-rows">${body}</div>`;
+}
+
+const meterBtn = (machine) => `<button class="icon-btn" type="button" data-m="new" data-name="meters" data-preset='${esc(JSON.stringify({ equipment: machine.id, hours: machine.hours }))}' title="Мото цагийн заалт оруулах" aria-label="Мото цагийн заалт оруулах">${ico("gauge")}</button>`;
+const doneBtn = (order) => `<button class="icon-btn" type="button" data-m="quick" data-name="workorders" data-id="${order.id}" data-patch='${esc(JSON.stringify({ status: "done" }))}' title="Засвар дууссан" aria-label="Засвар дууссан">${ico("check")}</button>`;
+const hoursText = (hours) => (hours >= 48 ? `${Math.floor(hours / 24)} хоног ${Math.round(hours % 24)} ц` : `${hours.toFixed(1)} ц`);
+
+/** The maintenance master's board: unplanned and planned repairs, machines nearing service, and the month in numbers. */
+function maintBoard() {
+  const sum = m.data.maintSum;
+  const machineCell = (row) => `<span class="mt-code"><b>${esc(row.code)}</b><small>${esc(EQUIP_TYPES[row.type] || "")}${row.model ? ` · ${esc(row.model)}` : ""}</small></span>`;
+  const meterCell = (row) => `<span class="mt-meter"><b>${num(row.hours)} ц</b><small>${row.meter ? `заалт ${fmtMoment(row.meter.at)}` : "заалтгүй"}</small></span>`;
+  const acts = (row, withDone) => `<div class="acts">${canWrite("meters") ? meterBtn(row) : ""}${withDone && row.order && canWrite("workorders") ? doneBtn(row.order) : ""}</div>`;
+  const repairRow = (row, tone) => `<div class="mt-row is-${tone}">
+      ${machineCell(row)}
+      <span class="mt-what"><b>${esc(row.order.title)}</b><small>${row.order.auto ? `${badge("Автомат", "info")} ` : ""}${badge(WO_STATUS[row.order.status], TONE.wo[row.order.status])} · ${row.order.mechanic ? esc(row.order.mechanic) : "механик оноогоогүй"} · ${fmtMoment(row.order.opened)}-с</small></span>
+      <span class="mt-time"><b>${hoursText(row.order.hours)}</b><small>${tone === "bad" ? "зогсолт" : "засварт"}</small></span>
+      ${meterCell(row)}
+      ${acts(row, true)}
+    </div>`;
+  const soonRow = (row) => {
+    const used = row.serviceEvery - row.service.left;
+    const ratio = Math.min(1, Math.max(0, used / row.serviceEvery));
+    return `<div class="mt-row is-warn">
+      ${machineCell(row)}
+      <span class="mt-what"><span class="mt-bar"><i class="${row.service.left <= 10 ? "is-bad" : ""}" style="width:${Math.round(ratio * 100)}%"></i></span><small>${num(Math.round(used))} / ${num(row.serviceEvery)} мото цаг</small></span>
+      <span class="mt-time"><b>${num(Math.round(row.service.left))} ц</b><small>үлдсэн</small></span>
+      ${meterCell(row)}
+      ${acts(row, false)}
+    </div>`;
+  };
+  const list = (rows, render, empty) => (rows.length ? `<div class="mt-rows">${rows.map(render).join("")}</div>` : `<p class="mt-none">${ico("check", "m-ico tiny")}${esc(empty)}</p>`);
+  const month = sum.month;
+  const share = month.planned + month.breakdowns ? month.planned / (month.planned + month.breakdowns) : null;
+  const card = (icon, value, label, note = "", tone = "") => `<div class="m-kpi${tone ? ` is-${tone}` : ""}">${ico(icon)}<b>${value}</b><span>${label}</span>${note ? `<small>${note}</small>` : ""}</div>`;
+  const kpis = `<div class="m-kpis">
+      ${card("truck", `${sum.counts.ready}/${sum.counts.total}`, "Бэлэн техник", `${sum.counts.down} эвдэрсэн · ${sum.counts.service} засварт`, sum.counts.down ? "warn" : "ok")}
+      ${card("wrench", month.planned, "Төлөвлөгөөт засвар хийсэн", "сүүлийн 30 хоног", "ok")}
+      ${card("alert", month.breakdowns, "Эвдрэл", "сүүлийн 30 хоног", month.breakdowns ? "bad" : "ok")}
+      ${card("clock", `${num(month.downHours)} ц`, "Эвдрэлийн зогсолт", "сүүлийн 30 хоног", month.downHours ? "warn" : "ok")}
+      ${card("gauge", pct(share), "Төлөвлөгөөт засварын хувь", "≥ 80% зорилт", share == null || share >= 0.8 ? "ok" : "warn")}
+    </div>`;
+  const note = `<p class="mt-hint">${ico("gauge", "m-ico tiny")}Мото цаг засварын давтамжид хүрмэгц төлөвлөгөөт засварын захиалга автоматаар нээгдэж, техник «Засварт» төлөвт орж ажил, чиглүүлэлтээс гарна. Захиалга «Дууссан» болоход сүүлийн засварын мото цаг шинэчлэгдэнэ.</p>`;
+  return `${panel({ key: "mt-kpi", icon: "chart", title: "Засвар үйлчилгээ · гүйцэтгэл", body: kpis + note })}
+    ${panel({ key: "mt-unplanned", icon: "alert", title: "Төлөвлөгөөт бус засварт орсон техник", count: sum.unplanned.length, cls: sum.unplanned.length ? "is-alarm" : "", body: list(sum.unplanned, (row) => repairRow(row, "bad"), "Эвдрэлээр зогссон техник алга") })}
+    ${panel({ key: "mt-planned", icon: "wrench", title: "Төлөвлөгөөт засварт байгаа техник", count: sum.planned.length, body: list(sum.planned, (row) => repairRow(row, "info"), "Төлөвлөгөөт засварт техник алга") })}
+    ${panel({ key: "mt-soon", icon: "gauge", title: `${SOON_HOURS} мото цагийн дотор засварт орох`, count: sum.soon.length, body: list(sum.soon, soonRow, "Ойрын хугацаанд засварт орох техник алга") })}
+    ${fleetPanel()}`;
 }
 
 function roomsTab() {

@@ -17,6 +17,7 @@
         <img class="login-logo" src="/umbrella-logo.png" alt="" width="96" height="96" />
         <p class="login-brand">U.MBRELLA</p>
         <p class="login-sub">Corporation <em>Security Access</em></p>
+        <p class="login-motto"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/></svg><span><b>Аюулгүй ажиллагаа нэн тэргүүнд</b><small>Осолгүй, гэмтэлгүй ажиллах нь бидний зорилт</small></span></p>
         <label>Нэвтрэх нэр<input class="login-code" name="username" autocomplete="username" autocapitalize="characters" spellcheck="false" maxlength="4" placeholder="4 оронтой код" required autofocus /></label>
         <label>Нууц үг<input name="password" type="password" autocomplete="current-password" required /></label>
         <p class="form-error" id="login-error" role="alert"></p>
@@ -37,6 +38,10 @@
           <div class="seg-clock" id="clock" role="timer">
             <div class="seg-time" id="seg-time"></div>
             <div class="seg-date" id="seg-date"></div>
+          </div>
+          <div class="top-motto" role="note" aria-label="Аюулгүй ажиллагаа нэн тэргүүнд">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/></svg>
+            <span><b>Аюулгүй ажиллагаа нэн тэргүүнд</b><small>Зорилт · осолгүй, гэмтэлгүй ажиллах</small></span>
           </div>
         </div>
         <div class="top-actions">
@@ -105,6 +110,9 @@
           <button type="button" data-view="env" data-role="envmgr director" aria-label="Байгаль орчин" data-tip="Байгаль орчин · хяналт, нөхөн сэргээлт" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19.5c0-8.5 5.5-14 15-14.5-.5 9.5-6 15-14 15"/><path d="M5 19.5c3-4.5 6.5-7.5 10.5-9.5"/></svg>
           </button>
+          <button type="button" data-view="maint" data-role="maint director" aria-label="Засвар үйлчилгээ" data-tip="Засвар үйлчилгээ · мото цаг" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5a4 4 0 0 0-5 5L4 16l4 4 5.5-5.5a4 4 0 0 0 5-5l-2.5 2.5-2.5-.5-.5-2.5z"/></svg>
+          </button>
           <button type="button" data-view="procure" data-role="engineer" aria-label="Техник, багаж · хүсэлт" data-tip="Худалдан авах, актлах хүсэлт" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2.5l2.2 10.5h10.6L20.5 7H6.6"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>
           </button>
@@ -139,6 +147,7 @@
         </button>
       </aside>
       <main class="main">
+        <p class="motto-strip" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.2 7.5 9.5 4.3-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/></svg><b>Аюулгүй ажиллагаа нэн тэргүүнд</b><span>Зорилт · осолгүй, гэмтэлгүй ажиллах</span></p>
         <section id="stage" class="stage"></section>
       </main>
     </div>

@@ -1,5 +1,6 @@
 // Fleet control centre for the chief mining engineer: live map, selected unit, production and equipment state.
 import { EQUIP_TYPES, PRIORITIES, WO_KINDS, localInput } from "./minecore.js";
+import { LEAVE_LABEL, WEEKDAY_SHORT } from "./workstats.js";
 import { FACES, MATERIALS, PHASES, SITE, ROADS, ZONES, fleetState, fuelLevel, haulTotals, hourlyHaul, opClock, shiftDayStart, zoneBox } from "./fleetcore.js";
 
 export const FLEET_VIEWS = ["fleet"];
@@ -54,6 +55,7 @@ const SHIFT_BARS = [
   ["day", "Өдөр"],
   ["night", "Шөнө"],
   ["off", "Амралт"],
+  ["leave", "Чөлөө"],
 ];
 
 let ctx = null;
@@ -230,7 +232,7 @@ export function fleetView() {
     <div class="fl-grid">
       <aside class="fl-col fl-left">
         <section class="fl-card"><h3>${ico("pin")}Ажлын бүс</h3><div data-fl-part="zones"></div></section>
-        <section class="fl-card"><h3>${ico("people")}Ээлжийн ажилтан</h3><div data-fl-part="shifts"></div></section>
+        <section class="fl-card"><h3>${ico("people")}Ажиллах хүч</h3><div data-fl-part="shifts"></div></section>
         <section class="fl-card"><h3>${ico("dept")}Хэлтсээр</h3><div data-fl-part="depts"></div></section>
       </aside>
       <section class="fl-col fl-center">
@@ -267,9 +269,11 @@ export function fleetView() {
           </div>
           <div data-fl-part="chart"></div>
         </section>
+        <section class="fl-card"><h3>${ico("pile")}Олборлосон нүүрс · төрлөөр</h3><div data-fl-part="coal"></div></section>
       </section>
       <aside class="fl-col fl-right">
         <section class="fl-card fl-ai" data-fl-part="ai"></section>
+        <section class="fl-card fl-maint"><h3>${ico("wrench")}Засвар үйлчилгээ</h3><div data-fl-part="maint"></div></section>
         <section class="fl-card"><h3>${ico("pile")}Материал</h3><div data-fl-part="materials"></div></section>
         <section class="fl-card fl-equip">
           <h3>${ico("truck")}Техникийн төлөв</h3>
@@ -495,6 +499,8 @@ function paintParts(full) {
   if (full) {
     set("shifts", shifts());
     set("depts", depts());
+    set("maint", maintCard());
+    set("coal", coalCard());
   }
   set("chart", chart(now));
   paintSelected(full);
@@ -532,10 +538,55 @@ function zones() {
 }
 
 function shifts() {
-  const people = f.data.personnel;
-  const max = Math.max(1, people.day, people.night, people.off);
-  return `<div class="fl-bars">${SHIFT_BARS.map(([key, label]) => `<div class="fl-barrow"><span>${label}</span><span class="fl-bar is-${key}"><i style="width:${pct(people[key] / max)}"></i></span><b>${people[key]}</b></div>`).join("")}</div>
-    <p class="fl-note">${ico("check", "fl-ico tiny")}Талбай дээр <b>${people.onSite}</b> / ${people.total}</p>`;
+  const work = f.data.workforce;
+  const today = work.today;
+  const max = Math.max(1, ...SHIFT_BARS.map(([key]) => today[key]));
+  const leave = Object.entries(work.leave).filter(([, count]) => count).map(([key, count]) => `${LEAVE_LABEL[key]} ${count}`).join(" · ");
+  const peak = Math.max(1, ...work.forecast.map((day) => day.day + day.night));
+  const week = work.forecast
+    .map((day) => `<span class="fl-week-day" title="${day.date.slice(5).replace("-", ".")} · өдөр ${day.day}, шөнө ${day.night}, амралт ${day.off}, чөлөө ${day.leave}"><span class="fl-week-col"><i class="is-night" style="height:${pct(day.night / peak)}"></i><i class="is-day" style="height:${pct(day.day / peak)}"></i></span><small>${WEEKDAY_SHORT[new Date(`${day.date}T00:00:00Z`).getUTCDay()]}</small></span>`)
+    .join("");
+  const roles = work.positions.slice(0, 4).map((item) => `<span class="fl-pos"><b>${item.onSite}/${item.total}</b>${esc(item.name)}</span>`).join("");
+  return `<p class="fl-work-total"><b>${num(work.total)}</b><span>нийт ажилтан · талбай дээр <b>${num(work.onSite)}</b></span></p>
+    <div class="fl-bars">${SHIFT_BARS.map(([key, label]) => `<div class="fl-barrow"><span>${label}</span><span class="fl-bar is-${key}"><i style="width:${pct(today[key] / max)}"></i></span><b>${today[key]}</b></div>`).join("")}</div>
+    ${leave ? `<p class="fl-note">${ico("user", "fl-ico tiny")}${esc(leave)}</p>` : ""}
+    <div class="fl-week" aria-label="7 хоногийн ээлжийн төлөвлөгөө">${week}</div>
+    ${roles ? `<div class="fl-poss">${roles}</div>` : ""}`;
+}
+
+const leftText = (left) => (left <= 0 ? "хүрсэн" : `${num(left)} ц`);
+
+/** Machines in unplanned and planned repair and those nearing service by the hour meter. */
+function maintCard() {
+  const sum = f.data.maintenance;
+  if (!sum) return `<p class="fl-muted">Мэдээлэл алга</p>`;
+  const row = (item, tone, value, note) => `<button type="button" class="fl-mrow is-${tone}" data-fl-unit="${esc(item.id)}"><span class="fl-row-ico is-${tone}">${ico(item.type)}</span><span class="fl-row-main"><b>${esc(item.code)}</b><small>${esc(note)}</small></span><em>${esc(value)}</em></button>`;
+  const group = (title, tone, rows) => (rows.length ? `<p class="fl-msub is-${tone}">${esc(title)} <b>${rows.length}</b></p>${rows.join("")}` : "");
+  const body = [
+    group("Төлөвлөгөөт бус · эвдрэл", "bad", sum.unplanned.map((item) => row(item, "bad", `${num(item.order.hours)} ц`, item.order.title))),
+    group("Төлөвлөгөөт засварт", "info", sum.planned.map((item) => row(item, "info", `${num(item.order.hours)} ц`, `${num(item.hours)} мото цаг${item.order.auto ? " · автомат" : ""}`))),
+    group("Удахгүй засварт орох", "warn", sum.soon.slice(0, 5).map((item) => row(item, "warn", leftText(Math.round(item.service.left)), `${num(item.hours)} мото цаг`))),
+  ].join("");
+  return `<div class="fl-mstats"><span class="is-bad"><b>${sum.unplanned.length}</b>эвдрэл</span><span class="is-info"><b>${sum.planned.length}</b>төлөвлөгөөт</span><span class="is-warn"><b>${sum.soon.length}</b>удахгүй</span><span><b>${num(sum.month.downHours)}</b>зогсолт ц/30х</span></div>
+    ${body || `<p class="fl-muted">${ico("check", "fl-ico tiny")}Бүх техник ажилд бэлэн</p>`}`;
+}
+
+const COAL_LABEL = { coking: "Коксжих", thermal: "Эрчим хүчний", oxidized: "Исэлдсэн", unclassified: "Ангилаагүй" };
+
+/** Coal mined by type for the shift, the last 7 days and the month, from shift reports. */
+function coalCard() {
+  const coal = f.data.coal;
+  if (!coal) return `<p class="fl-muted">Мэдээлэл алга</p>`;
+  const keys = Object.keys(COAL_LABEL);
+  const rows = [["Өнөөдөр", coal.shift], ["Сүүлийн 7 хоног", coal.week], [`Энэ сар · ${Number(f.data.shiftDate.slice(8))} хоног`, coal.month]]
+    .map(([label, sum]) => {
+      if (!sum.total) return `<div class="fl-coal-row"><div class="fl-coal-head"><b>${label}</b><span>0 т</span></div><p class="fl-muted">Ээлжийн тайлан ирээгүй байна</p></div>`;
+      const bar = sum.total ? keys.filter((key) => sum[key] > 0).map((key) => `<i class="is-${key}" style="flex:${sum[key] / sum.total}" title="${COAL_LABEL[key]}: ${num(sum[key])} т"></i>`).join("") : `<i class="is-empty" style="flex:1"></i>`;
+      const cells = keys.filter((key) => key !== "unclassified" || sum[key] > 0).map((key) => `<span><small>${COAL_LABEL[key]}</small><b>${num(sum[key])} т</b></span>`).join("");
+      return `<div class="fl-coal-row"><div class="fl-coal-head"><b>${label}</b><span>${num(sum.total)} т</span></div><span class="coal-split is-wide">${bar}</span><div class="fl-coal-cells">${cells}</div></div>`;
+    })
+    .join("");
+  return `<div class="fl-coal">${rows}</div>`;
 }
 
 function depts() {
@@ -577,7 +628,10 @@ function suggestions(now) {
   const machines = f.live.machines;
   for (const unit of machines.filter((item) => item.overspeed)) items.push(["bad", "gauge", `${unit.code} хурд хэтрүүлж байна: ${Math.round(unit.kmh)} км/ц (хязгаар ${unit.limit})`, unit.id]);
   for (const record of f.data.equipment.filter((item) => item.prestart?.critical)) items.push(["bad", "alert", `${record.code} prestart: ${record.prestart.fails.slice(0, 2).join(", ")}`, record.id]);
-  for (const record of f.data.equipment.filter((item) => item.status === "down")) items.push(["warn", "wrench", `${record.code} эвдэрсэн${record.orders.length ? ` · ${record.orders[0].title}` : ""}`, record.id]);
+  for (const record of f.data.equipment.filter((item) => item.status === "down")) {
+    const order = record.orders.find((item) => item.kind === "breakdown") || record.orders[0];
+    items.push(["warn", "wrench", `${record.code} эвдэрсэн${order ? ` · ${order.title}` : ""}`, record.id]);
+  }
   const diggers = f.live.plan.diggers.filter((item) => item.active);
   for (const digger of diggers) {
     const queued = machines.filter((item) => item.digger === digger.machine.id && item.phase === "queue");

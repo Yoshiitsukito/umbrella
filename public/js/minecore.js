@@ -59,6 +59,10 @@ export const EQUIP_CERT = { excavator: "excavator", truck: "truck", dozer: "doze
 /** "retired" is set when the director approves a write-off; such a machine leaves the fleet and its figures. */
 export const EQUIP_STATUS = { ready: "Бэлэн", running: "Ажиллаж байна", down: "Эвдэрсэн", service: "Засварт", retired: "Актлагдсан" };
 export const WO_KINDS = { breakdown: "Эвдрэл", planned: "Төлөвлөгөөт засвар", inspection: "Үзлэг" };
+/** Coal as it leaves the face; a shift report splits its tonnes between these. */
+export const COAL_TYPES = { coking: "Коксжих нүүрс", thermal: "Эрчим хүчний нүүрс", oxidized: "Исэлдсэн, завсрын" };
+/** Hours left on the meter at which a machine shows up as due for service soon. */
+export const SERVICE_SOON_HOURS = 50;
 export const WO_STATUS = { open: "Нээлттэй", progress: "Хийгдэж байна", done: "Дууссан" };
 export const PRIORITIES = { low: "Бага", medium: "Дунд", high: "Яаралтай" };
 export const STOCK_CATS = { spare: "Сэлбэг", ppe: "ХХХ", fuel: "Шатахуун, тос", consumable: "Хэрэглээний материал" };
@@ -505,10 +509,25 @@ export const COLLECTIONS = {
       f("shift", "Ээлж", "select", { options: SHIFTS, required: true, list: true, def: "current" }),
       f("crew", "Бригад", "ref", { ref: "crews", list: true }),
       f("place", "Хэсэг, блок", "text", { max: 80, list: true }),
-      f("tonnes", "Олборлолт (тонн)", "number", { min: 0, max: 1000000, step: 1, list: true, def: 0 }),
+      f("coking", "Коксжих нүүрс (тонн)", "number", { min: 0, max: 1000000, step: 1, def: 0 }),
+      f("thermal", "Эрчим хүчний нүүрс (тонн)", "number", { min: 0, max: 1000000, step: 1, def: 0 }),
+      f("oxidized", "Исэлдсэн, завсрын (тонн)", "number", { min: 0, max: 1000000, step: 1, def: 0 }),
+      f("tonnes", "Нийт олборлолт (тонн) · ангилбал автоматаар", "number", { min: 0, max: 1000000, step: 1, list: true, def: 0 }),
       f("work", "Хийсэн ажил", "long", { max: 1000, required: true }),
       f("issues", "Гарсан асуудал", "long", { max: 800 }),
       f("next", "Дараагийн ээлжид", "long", { max: 800 }),
+    ],
+  },
+  meters: {
+    area: "maint",
+    prefix: "mtr",
+    keep: 2000,
+    label: "Мото цагийн заалт",
+    fields: [
+      f("equipment", "Техник", "ref", { ref: "equipment", required: true, list: true }),
+      f("at", "Хэзээ", "datetime", { required: true, list: true, def: "now" }),
+      f("hours", "Мото цагийн заалт", "number", { min: 0, max: 300000, step: 0.1, required: true, list: true }),
+      f("note", "Тэмдэглэл", "text", { max: 120, list: true }),
     ],
   },
   rooms: {
@@ -746,7 +765,7 @@ export const COLLECTIONS = {
   },
 };
 
-export const AREAS = ["hse", "skills", "ops", "camp", "guard", "fin", "coal", "env"];
+export const AREAS = ["hse", "skills", "ops", "maint", "camp", "guard", "fin", "coal", "env"];
 
 export function collectionsOf(area) {
   return Object.keys(COLLECTIONS).filter((name) => COLLECTIONS[name].area === area);
@@ -1009,6 +1028,19 @@ export function ppeDue(record) {
 export function serviceDue(equipment) {
   const used = (equipment.hours || 0) - (equipment.lastService || 0);
   return { due: used >= equipment.serviceEvery, left: equipment.serviceEvery - used };
+}
+
+/** Coal tonnes by type from shift reports dated `from`–`to`; tonnes a report did not split count as unclassified. */
+export function coalByType(handovers, from, to) {
+  const totals = { ...Object.fromEntries(Object.keys(COAL_TYPES).map((key) => [key, 0])), unclassified: 0, total: 0 };
+  for (const item of handovers || []) {
+    if (item.date < from || item.date > to) continue;
+    const split = Object.keys(COAL_TYPES).reduce((sum, key) => sum + (Number(item[key]) || 0), 0);
+    for (const key of Object.keys(COAL_TYPES)) totals[key] += Number(item[key]) || 0;
+    totals.unclassified += Math.max(0, (Number(item.tonnes) || 0) - split);
+    totals.total += Math.max(split, Number(item.tonnes) || 0);
+  }
+  return totals;
 }
 
 export function prestartFails(record) {

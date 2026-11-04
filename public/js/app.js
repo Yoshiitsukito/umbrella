@@ -126,10 +126,11 @@ const ROLE_LABEL = {
   director: "Гүйцэтгэх захирал",
   shipmgr: "Ачилтын менежер",
   envmgr: "Байгаль орчны менежер",
+  maint: "Засварын мастер",
 };
-const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer", "campmgr", "security", "finance", "director", "shipmgr", "envmgr"];
+const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer", "campmgr", "security", "finance", "director", "shipmgr", "envmgr", "maint"];
 /** The page each management role lands on. */
-const ROLE_HOME = { master: "mine", engineer: "fleet", campmgr: "camp", security: "guard", finance: "finance", director: "exec", shipmgr: "coal", envmgr: "env" };
+const ROLE_HOME = { master: "mine", engineer: "fleet", campmgr: "camp", security: "guard", finance: "finance", director: "exec", shipmgr: "coal", envmgr: "env", maint: "maint" };
 const STAFF_ROLES = ["user", "hr", "kitchen"];
 const ADMIN_VIEWS = ["users", "account", "card", "whiteking"];
 const HR_VIEWS = ["staff", "today"];
@@ -4150,6 +4151,40 @@ function staffSelects(data) {
   ].join("");
 }
 
+/** Workforce at a glance: today's shifts and leave, departments and positions, and the next 7 days of crews. */
+function workforcePanel(work) {
+  if (!work) return "";
+  const share = (value, total) => `${total ? Math.round((value / total) * 100) : 0}%`;
+  const tile = (cls, value, label, note = "") => `<div class="wf-tile ${cls}"><b>${value}</b><span>${label}</span>${note ? `<small>${esc(note)}</small>` : ""}</div>`;
+  const leave = Object.entries(work.leave).filter(([, count]) => count).map(([key, count]) => `${LEAVE_LABEL[key]} ${count}`).join(" · ");
+  const bars = (list) => {
+    const max = Math.max(1, ...list.map((item) => item.total));
+    return list
+      .map((item) => `<div class="wf-row"><span title="${esc(item.name)}">${esc(item.name)}</span><span class="wf-bar"><i style="width:${share(item.total, max)}"></i><i class="is-in" style="width:${share(item.onSite, max)}"></i></span><b>${item.onSite}/${item.total}</b></div>`)
+      .join("");
+  };
+  const peak = Math.max(1, ...work.forecast.map((day) => day.day + day.night));
+  const week = work.forecast
+    .map((day, index) => `<div class="wf-day${index === 0 ? " is-today" : ""}" title="өдөр ${day.day} · шөнө ${day.night} · амралт ${day.off} · чөлөө ${day.leave}"><span class="wf-col"><i class="is-night" style="height:${share(day.night, peak)}"></i><i class="is-day" style="height:${share(day.day, peak)}"></i></span><b>${day.day + day.night}</b><small>${WEEKDAY_SHORT[weekdayOf(day.date)]} ${day.date.slice(8)}</small></div>`)
+    .join("");
+  return `<section class="panel wf-panel">
+      <div class="wf-head"><h2>Ажиллах хүч · хүний нөөц</h2><small>${esc(work.date)} ээлжийн өдөр</small></div>
+      <div class="wf-tiles">
+        ${tile("", work.total, "Нийт ажилтан")}
+        ${tile("is-in", work.onSite, "Талбай дээр", share(work.onSite, work.total))}
+        ${tile("is-day", work.today.day, "Өдрийн ээлж")}
+        ${tile("is-night", work.today.night, "Шөнийн ээлж")}
+        ${tile("is-off", work.today.off, "Амралттай")}
+        ${tile("is-leave", work.today.leave, "Чөлөөтэй", leave)}
+      </div>
+      <div class="wf-grid">
+        <div><h3>Хэлтсээр <small>талбай дээр / нийт</small></h3>${bars(work.departments) || `<p class="muted">Хэлтэс бүртгэгдээгүй</p>`}</div>
+        <div><h3>Албан тушаалаар</h3>${bars(work.positions)}</div>
+        <div><h3>7 хоногийн ээлж <small><i class="wf-key is-day"></i>өдөр <i class="wf-key is-night"></i>шөнө</small></h3><div class="wf-week">${week}</div></div>
+      </div>
+    </section>`;
+}
+
 function hrStaffView() {
   const data = state.admin;
   if (!data?.attendance) return adminLoading();
@@ -4167,6 +4202,7 @@ function hrStaffView() {
         </div>
         <div class="admin-stats staff-stats" data-staff="stats">${parts.stats}</div>
       </section>
+      ${workforcePanel(data.workforce)}
       <section class="panel admin-users fold-box${hrFold().staff ? " is-open" : ""}" data-fold-box="staff">
         <div class="admin-users-head">
           <h2>Ажилтнууд <small data-staff="range">${parts.range}</small></h2>
