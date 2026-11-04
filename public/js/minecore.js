@@ -1,5 +1,5 @@
-// Mine-site records (safety, competency, operations, camp, security) shared by the server and the MASTER pages:
-// the schema every record is checked against, and the pure arithmetic built on top of it.
+// Mine-site records (safety, competency, operations, camp, security, finance, coal sales, environment) shared by
+// the server and the pages: the schema every record is checked against, and the pure arithmetic built on top of it.
 import { addDays, isRotation, leaveOn, periodSummary, plannedKind, sessionsOf, shiftDateOf } from "./workstats.js";
 
 const HOUR_MS = 3600 * 1000;
@@ -56,7 +56,8 @@ export const INDUCTION_ITEMS = {
 export const EQUIP_TYPES = { excavator: "Экскаватор", truck: "Самосвал", dozer: "Бульдозер", loader: "Ачигч", drill: "Өрмийн машин", crane: "Кран", grader: "Грейдер", lv: "Суудлын машин", bus: "Автобус" };
 /** The licence an operator needs for each kind of machine. */
 export const EQUIP_CERT = { excavator: "excavator", truck: "truck", dozer: "dozer", loader: "loader", drill: "drill", crane: "crane", grader: "dozer", lv: "drive_b", bus: "drive_d" };
-export const EQUIP_STATUS = { ready: "Бэлэн", running: "Ажиллаж байна", down: "Эвдэрсэн", service: "Засварт" };
+/** "retired" is set when the director approves a write-off; such a machine leaves the fleet and its figures. */
+export const EQUIP_STATUS = { ready: "Бэлэн", running: "Ажиллаж байна", down: "Эвдэрсэн", service: "Засварт", retired: "Актлагдсан" };
 export const WO_KINDS = { breakdown: "Эвдрэл", planned: "Төлөвлөгөөт засвар", inspection: "Үзлэг" };
 export const WO_STATUS = { open: "Нээлттэй", progress: "Хийгдэж байна", done: "Дууссан" };
 export const PRIORITIES = { low: "Бага", medium: "Дунд", high: "Яаралтай" };
@@ -117,6 +118,29 @@ export const VIOLATION_KINDS = {
 /** The security officer's report is "new" until HSE takes it up and decides. */
 export const VIOLATION_STATUS = { new: "Шинэ", review: "ХАБЭА хянаж байна", acted: "Арга хэмжээ авсан", dismissed: "Үндэслэлгүй" };
 export const MEASURES = { warning: "Сануулга", training: "Давтан сургалт", fine: "Торгууль", suspend: "Ажлаас түр түдгэлзүүлэх", dismiss: "Ажлаас чөлөөлөх", other: "Бусад" };
+export const CAPEX_KINDS = { equipment: "Хүнд техник", vehicle: "Тээврийн хэрэгсэл", tool: "Багаж, тоног төхөөрөмж", part: "Сэлбэг, материал", other: "Бусад" };
+export const DISPOSE_METHODS = { sell: "Худалдах", scrap: "Актлаж устгах", transfer: "Шилжүүлэх" };
+/** A purchase or write-off request goes chief engineer → finance → director; the server alone moves the stage. */
+export const REQUEST_STAGES = { finance: "Санхүү хянаж байна", director: "Захирал батлах", approved: "Батлагдсан", rejected: "Татгалзсан" };
+export const ASSET_CATS = { equipment: "Хүнд техник", vehicle: "Тээврийн хэрэгсэл", tool: "Багаж, тоног төхөөрөмж", building: "Барилга, байгууламж", other: "Бусад" };
+export const ASSET_STATUS = { active: "Ашиглаж буй", disposed: "Актлагдсан" };
+/** Fuel is not entered here: it is priced from the fuel log. */
+export const COST_CATS = { repair: "Засвар үйлчилгээ", parts: "Сэлбэг, материал", salary: "Цалин хөлс", transport: "Тээвэр, логистик", energy: "Эрчим хүч", other: "Бусад" };
+export const BUDGET_CATS = { fuel: "Түлш", ...COST_CATS };
+export const COAL_SOURCES = { pit: "Уурхайн нүүр", rom: "ROM овоолго", stock: "Агуулахын овоолго", wash: "Баяжуулсан" };
+export const SALE_STATUS = { open: "Нээлттэй", done: "Биелсэн", cancelled: "Цуцлагдсан" };
+/** Monitoring limits a reading is judged against; `min` and `max` bound the allowed range, null means no limit. */
+export const ENV_METRICS = {
+  pm10: { label: "Тоос PM10", unit: "мкг/м³", min: null, max: 100 },
+  pm25: { label: "Тоос PM2.5", unit: "мкг/м³", min: null, max: 50 },
+  noise: { label: "Дуу чимээ", unit: "дБ(A)", min: null, max: 70 },
+  ph: { label: "Усны pH", unit: "", min: 6, max: 9 },
+  tss: { label: "Усны умбуур бодис", unit: "мг/л", min: null, max: 50 },
+  water: { label: "Ус ашиглалт", unit: "м³/хон", min: null, max: 1500 },
+};
+export const ENV_METRIC_LABELS = Object.fromEntries(Object.entries(ENV_METRICS).map(([key, item]) => [key, item.label]));
+export const REHAB_STAGES = { planned: "Төлөвлөсөн", technical: "Техникийн нөхөн сэргээлт", biological: "Биологийн нөхөн сэргээлт", handed: "Хүлээлгэн өгсөн" };
+export const AUDIT_STATUS = { open: "Нээлттэй", done: "Арилгасан" };
 export const SOS_KINDS = { sos: "SOS товч", lone: "Ганцаар ажиллагч хариу өгөөгүй" };
 export const SOS_STATUS = { open: "Шинэ", ack: "Хүлээн авсан", resolved: "Шийдвэрлэсэн", cancelled: "Цуцалсан" };
 /** Pre-start checklist: key, label, and whether a failure takes the machine out of service. */
@@ -142,10 +166,12 @@ export const CERT_SOON_DAYS = 30;
 export const DEFAULT_RULES = { enforce: true, required: ["hse"], medical: true, alcoholHours: 24 };
 
 const f = (key, label, type, extra = {}) => ({ key, label, type, ...extra });
+/** Largest amount in tögrög a money field takes (one trillion). */
+const MONEY_MAX = 1_000_000_000_000;
 
 /**
  * Every record type: the top-level area it is stored under, its id prefix, how many are kept, and its fields.
- * Field types: text, long, number, date, datetime, time, select, user, users, ref, bool, checks, photo, geo.
+ * Field types: text, long, number, date, month, datetime, time, select, user, users, ref, bool, checks, photo, geo.
  * `list` puts a field in the table, `def` is the form default, `show` limits a field to some values of another.
  */
 export const COLLECTIONS = {
@@ -561,9 +587,166 @@ export const COLLECTIONS = {
       f("photo", "Нотлох зураг", "photo"),
     ],
   },
+  capex: {
+    area: "fin",
+    prefix: "cpx",
+    keep: 500,
+    label: "Худалдан авах хүсэлт",
+    fields: [
+      f("kind", "Төрөл", "select", { options: CAPEX_KINDS, required: true, list: true, def: "equipment" }),
+      f("title", "Юу авах", "text", { max: 100, required: true, list: true }),
+      f("qty", "Тоо ширхэг", "number", { min: 1, max: 10000, step: 1, required: true, list: true, def: 1 }),
+      f("price", "Нэгжийн үнэ (₮)", "number", { min: 1, max: MONEY_MAX, step: 1, required: true, list: true }),
+      f("vendor", "Нийлүүлэгч", "text", { max: 80 }),
+      f("needBy", "Шаардлагатай хугацаа", "date", { list: true }),
+      f("reason", "Үндэслэл", "long", { max: 1000, required: true }),
+    ],
+  },
+  disposals: {
+    area: "fin",
+    prefix: "dsp",
+    keep: 500,
+    label: "Техник актлах, худалдах хүсэлт",
+    fields: [
+      f("equipment", "Техник", "ref", { ref: "equipment", required: true, list: true }),
+      f("method", "Хэлбэр", "select", { options: DISPOSE_METHODS, required: true, list: true, def: "sell" }),
+      f("value", "Үнэлгээ, борлуулах үнэ (₮)", "number", { min: 0, max: MONEY_MAX, step: 1, list: true, def: 0 }),
+      f("reason", "Үндэслэл (эвдрэл, элэгдэл, мото цаг)", "long", { max: 1000, required: true }),
+    ],
+  },
+  assets: {
+    area: "fin",
+    prefix: "ast",
+    keep: 1000,
+    label: "Үндсэн хөрөнгө, элэгдэл",
+    fields: [
+      f("name", "Хөрөнгө", "text", { max: 100, required: true, list: true }),
+      f("category", "Ангилал", "select", { options: ASSET_CATS, required: true, list: true, def: "equipment" }),
+      f("equipment", "Холбогдох техник", "ref", { ref: "equipment" }),
+      f("cost", "Анхны өртөг (₮)", "number", { min: 1, max: MONEY_MAX, step: 1, required: true, list: true }),
+      f("acquired", "Авсан огноо", "date", { required: true, list: true, def: "today" }),
+      f("life", "Ашиглах хугацаа (жил)", "number", { min: 1, max: 50, step: 1, required: true, def: 8 }),
+      f("salvage", "Үлдэх өртөг (₮)", "number", { min: 0, max: MONEY_MAX, step: 1, def: 0 }),
+      f("status", "Төлөв", "select", { options: ASSET_STATUS, list: true, def: "active" }),
+    ],
+  },
+  costs: {
+    area: "fin",
+    prefix: "cst",
+    keep: 3000,
+    label: "Зардал",
+    fields: [
+      f("date", "Огноо", "date", { required: true, list: true, def: "today" }),
+      f("category", "Ангилал", "select", { options: COST_CATS, required: true, list: true, def: "repair" }),
+      f("amount", "Дүн (₮)", "number", { min: 1, max: MONEY_MAX, step: 1, required: true, list: true }),
+      f("equipment", "Техник", "ref", { ref: "equipment", list: true }),
+      f("note", "Тайлбар, нийлүүлэгч", "text", { max: 120, list: true }),
+    ],
+  },
+  budgets: {
+    area: "fin",
+    prefix: "bud",
+    keep: 600,
+    label: "Сарын төсөв",
+    fields: [
+      f("month", "Сар", "month", { required: true, list: true, def: "month" }),
+      f("category", "Ангилал", "select", { options: BUDGET_CATS, required: true, list: true, def: "fuel" }),
+      f("amount", "Төсөв (₮)", "number", { min: 1, max: MONEY_MAX, step: 1, required: true, list: true }),
+      f("note", "Тайлбар", "text", { max: 120 }),
+    ],
+  },
+  labs: {
+    area: "coal",
+    prefix: "lab",
+    keep: 2000,
+    label: "Нүүрсний чанарын шинжилгээ",
+    fields: [
+      f("date", "Огноо", "date", { required: true, list: true, def: "today" }),
+      f("sample", "Дээжийн дугаар", "text", { max: 20, required: true, list: true, unique: true }),
+      f("source", "Дээжийн эх үүсвэр", "select", { options: COAL_SOURCES, required: true, list: true, def: "rom" }),
+      f("cv", "Илчлэг (ккал/кг)", "number", { min: 1000, max: 8500, step: 1, required: true, list: true }),
+      f("ash", "Үнс (%)", "number", { min: 0, max: 70, step: 0.01, required: true, list: true }),
+      f("moisture", "Чийг (%)", "number", { min: 0, max: 60, step: 0.01, required: true, list: true }),
+      f("sulfur", "Хүхэр (%)", "number", { min: 0, max: 10, step: 0.01, list: true }),
+      f("volatile", "Дэгдэмхий бодис (%)", "number", { min: 0, max: 60, step: 0.01 }),
+    ],
+  },
+  sales: {
+    area: "coal",
+    prefix: "sal",
+    keep: 500,
+    label: "Борлуулалтын гэрээ",
+    fields: [
+      f("date", "Гэрээний огноо", "date", { required: true, list: true, def: "today" }),
+      f("buyer", "Худалдан авагч", "text", { max: 80, required: true, list: true }),
+      f("contract", "Гэрээний №", "text", { max: 30, list: true, unique: true }),
+      f("tonnes", "Гэрээт хэмжээ (тонн)", "number", { min: 1, max: 10_000_000, step: 1, required: true, list: true }),
+      f("price", "Үнэ (₮/тонн)", "number", { min: 1, max: 10_000_000, step: 1, required: true, list: true }),
+      f("minCv", "Доод илчлэг (ккал/кг)", "number", { min: 1000, max: 8500, step: 1 }),
+      f("status", "Төлөв", "select", { options: SALE_STATUS, list: true, def: "open" }),
+    ],
+  },
+  shipments: {
+    area: "coal",
+    prefix: "shp",
+    keep: 3000,
+    label: "Ачилт, жинлүүр",
+    fields: [
+      f("at", "Хэзээ", "datetime", { required: true, list: true, def: "now" }),
+      f("sale", "Гэрээ", "ref", { ref: "sales", required: true, list: true }),
+      f("vehicle", "Машин, вагоны №", "text", { max: 20, required: true, list: true }),
+      f("gross", "Бохир жин (тонн)", "number", { min: 1, max: 500, step: 0.01, required: true, list: true }),
+      f("tare", "Хоосон жин (тонн)", "number", { min: 1, max: 300, step: 0.01, required: true }),
+      f("lab", "Чанарын шинжилгээ", "ref", { ref: "labs", list: true }),
+      f("driver", "Жолооч", "text", { max: 60 }),
+      f("note", "Тэмдэглэл", "text", { max: 120 }),
+    ],
+  },
+  envReadings: {
+    area: "env",
+    prefix: "env",
+    keep: 3000,
+    label: "Хяналт шинжилгээ (тоос, ус, дуу чимээ)",
+    fields: [
+      f("at", "Хэзээ", "datetime", { required: true, list: true, def: "now" }),
+      f("point", "Хэмжилтийн цэг", "text", { max: 60, required: true, list: true }),
+      f("metric", "Үзүүлэлт", "select", { options: ENV_METRIC_LABELS, required: true, list: true, def: "pm10" }),
+      f("value", "Утга", "number", { min: 0, max: 100_000, step: 0.01, required: true, list: true }),
+      f("note", "Тэмдэглэл", "text", { max: 120 }),
+    ],
+  },
+  rehab: {
+    area: "env",
+    prefix: "reh",
+    keep: 300,
+    label: "Нөхөн сэргээлт",
+    fields: [
+      f("name", "Талбай", "text", { max: 60, required: true, list: true, unique: true }),
+      f("stage", "Үе шат", "select", { options: REHAB_STAGES, required: true, list: true, def: "planned" }),
+      f("planned", "Төлөвлөсөн (га)", "number", { min: 0.01, max: 10_000, step: 0.01, required: true, list: true }),
+      f("done", "Гүйцэтгэсэн (га)", "number", { min: 0, max: 10_000, step: 0.01, list: true, def: 0 }),
+      f("due", "Дуусах хугацаа", "date", { list: true }),
+      f("cost", "Зардал (₮)", "number", { min: 0, max: MONEY_MAX, step: 1 }),
+      f("note", "Тайлбар", "long", { max: 500 }),
+    ],
+  },
+  envAudits: {
+    area: "env",
+    prefix: "eva",
+    keep: 300,
+    label: "Хяналт шалгалт, зөрчил",
+    fields: [
+      f("date", "Огноо", "date", { required: true, list: true, def: "today" }),
+      f("agency", "Шалгасан байгууллага", "text", { max: 80, required: true, list: true }),
+      f("finding", "Илэрсэн зүйл", "long", { max: 800, required: true }),
+      f("action", "Авах арга хэмжээ", "text", { max: 160, list: true }),
+      f("due", "Арилгах хугацаа", "date", { list: true }),
+      f("status", "Төлөв", "select", { options: AUDIT_STATUS, list: true, def: "open" }),
+    ],
+  },
 };
 
-export const AREAS = ["hse", "skills", "ops", "camp", "guard"];
+export const AREAS = ["hse", "skills", "ops", "camp", "guard", "fin", "coal", "env"];
 
 export function collectionsOf(area) {
   return Object.keys(COLLECTIONS).filter((name) => COLLECTIONS[name].area === area);
@@ -593,7 +776,7 @@ export function addMonths(date, months) {
   return end.toISOString().slice(0, 10);
 }
 
-const TIMED_DEFAULTS = new Set(["now", "now+1h", "now+8h", "today", "shiftdate", "current", "all"]);
+const TIMED_DEFAULTS = new Set(["now", "now+1h", "now+8h", "today", "month", "shiftdate", "current", "all"]);
 
 /** The value a fresh form starts with. */
 export function defaultValue(field, now) {
@@ -602,6 +785,7 @@ export function defaultValue(field, now) {
   if (def === "now+1h") return localInput(now + HOUR_MS);
   if (def === "now+8h") return localInput(now + 8 * HOUR_MS);
   if (def === "today") return localDay(now);
+  if (def === "month") return localDay(now).slice(0, 7);
   if (def === "shiftdate") return shiftDateOf(now);
   if (def === "current") return currentShift(now);
   if (def === "all") return Object.keys(field.options || {});
@@ -670,6 +854,8 @@ function cleanField(field, raw, ctx) {
     }
     case "date":
       return isDate(raw) ? { value: String(raw) } : fail("огноо буруу");
+    case "month":
+      return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(raw)) ? { value: String(raw) } : fail("сар буруу (ОООО-СС)");
     case "datetime": {
       const value = parseMoment(raw);
       return value ? { value } : fail("огноо, цаг буруу");
@@ -959,7 +1145,7 @@ export function mineKpis({ handovers, planTonnes, incidents, workorders, equipme
   }
   const weekFrom = Date.parse(`${addDays(today, -6)}T06:00:00+08:00`);
   const span = Math.max(1, now - weekFrom);
-  const fleet = equipment || [];
+  const fleet = (equipment || []).filter((item) => item.status !== "retired");
   const down = fleet.reduce((sum, item) => sum + downtimeMs(workorders, item.id, weekFrom, now, now), 0);
   const available = fleet.length * span - down;
   const used = (assigns || []).filter((item) => item.date >= addDays(today, -6) && item.date <= today).length * 12 * HOUR_MS;

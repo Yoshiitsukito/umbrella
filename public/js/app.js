@@ -57,7 +57,7 @@ import {
   workload,
 } from "./wellstats.js";
 import { MENU_CATEGORIES, MENU_CATEGORY_LABEL, MENU_MEALS, MENU_MEAL_LABEL } from "./menulabels.js";
-import { CAMP_VIEWS, GUARD_VIEWS, MASTER_VIEWS, initMine, masterReset, masterStart, masterStop, masterView, workerPanel } from "./master.js";
+import { MINE_VIEWS, ROLE_VIEWS, initMine, masterReset, masterStart, masterStop, masterView, workerPanel } from "./master.js";
 import { FLEET_VIEWS, fleetReset, fleetStart, fleetStop, fleetView, initFleet } from "./fleet.js";
 import { PASS_KINDS, PASS_ROLES, PASS_SHORT } from "./passcore.js";
 import { PASS_VIEWS, initPasses, passIco, passStatusBadge, passTrail, passWhen, passesReset, passesStart, passesStop, passesView } from "./passes.js";
@@ -112,8 +112,24 @@ const state = {
   briefing: false,
 };
 
-const ROLE_LABEL = { admin: "Админ", hr: "Хүний нөөц", kitchen: "Гал тогоо", user: "Хэрэглэгч", whiteking: "White Queen", master: "Уурхайн мастер", engineer: "Уулын ахлах инженер", campmgr: "Кэмп менежер", security: "Хамгаалалт" };
-const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer", "campmgr", "security"];
+const ROLE_LABEL = {
+  admin: "Админ",
+  hr: "Хүний нөөц",
+  kitchen: "Гал тогоо",
+  user: "Хэрэглэгч",
+  whiteking: "White Queen",
+  master: "Уурхайн мастер",
+  engineer: "Уулын ахлах инженер",
+  campmgr: "Кэмп менежер",
+  security: "Хамгаалалт",
+  finance: "Санхүү",
+  director: "Гүйцэтгэх захирал",
+  shipmgr: "Ачилтын менежер",
+  envmgr: "Байгаль орчны менежер",
+};
+const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "engineer", "campmgr", "security", "finance", "director", "shipmgr", "envmgr"];
+/** The page each management role lands on. */
+const ROLE_HOME = { master: "mine", engineer: "fleet", campmgr: "camp", security: "guard", finance: "finance", director: "exec", shipmgr: "coal", envmgr: "env" };
 const STAFF_ROLES = ["user", "hr", "kitchen"];
 const ADMIN_VIEWS = ["users", "account", "card", "whiteking"];
 const HR_VIEWS = ["staff", "today"];
@@ -143,21 +159,9 @@ function isEngineer() {
   return state.me?.role === "engineer";
 }
 
-function isCampManager() {
-  return state.me?.role === "campmgr";
-}
-
-function isSecurity() {
-  return state.me?.role === "security";
-}
-
 function homeFor() {
   if (isStation()) return "station";
-  if (isMaster()) return "mine";
-  if (isEngineer()) return "fleet";
-  if (isCampManager()) return "camp";
-  if (isSecurity()) return "guard";
-  return isAdmin() ? "users" : "home";
+  return ROLE_HOME[state.me?.role] || (isAdmin() ? "users" : "home");
 }
 
 /** Views each role may open; everyone also has their profile, and HR and the kitchen keep every staff page on top of their own. */
@@ -165,13 +169,11 @@ function viewAllowed(view) {
   if (view === "profile") return true;
   if (PASS_VIEWS.includes(view)) return PASS_ROLES.includes(state.me?.role);
   if (isAdmin()) return ADMIN_VIEWS.includes(view);
-  if (isMaster()) return MASTER_VIEWS.includes(view) || FLEET_VIEWS.includes(view);
-  if (isEngineer()) return FLEET_VIEWS.includes(view);
-  if (isCampManager()) return CAMP_VIEWS.includes(view);
-  if (isSecurity()) return GUARD_VIEWS.includes(view);
+  if (FLEET_VIEWS.includes(view)) return isMaster() || isEngineer();
+  if (ROLE_VIEWS[state.me?.role]) return ROLE_VIEWS[state.me.role].includes(view);
   if (isHr() && HR_VIEWS.includes(view)) return true;
   if (isKitchen() && KITCHEN_VIEWS.includes(view)) return true;
-  return ![...ADMIN_VIEWS, ...HR_VIEWS, ...KITCHEN_VIEWS, ...MASTER_VIEWS, ...CAMP_VIEWS, ...GUARD_VIEWS, ...FLEET_VIEWS, "station"].includes(view);
+  return ![...ADMIN_VIEWS, ...HR_VIEWS, ...KITCHEN_VIEWS, ...MINE_VIEWS, ...FLEET_VIEWS, "station"].includes(view);
 }
 
 /** Staff who work shifts: regular users, HR and the kitchen alike. */
@@ -235,6 +237,12 @@ function renderChrome() {
   if (passCount) {
     passCount.textContent = live?.passInbox > 99 ? "99+" : String(live?.passInbox || "");
     passCount.hidden = !live?.passInbox;
+  }
+  const inboxView = role === "director" ? "exec" : role === "finance" ? "finance" : null;
+  for (const node of nav.querySelectorAll("[data-inbox] .nav-count")) {
+    const count = node.closest("[data-view]").dataset.view === inboxView ? live?.requestInbox || 0 : 0;
+    node.textContent = count > 99 ? "99+" : String(count || "");
+    node.hidden = !count;
   }
   const profileButton = nav.querySelector("[data-view='profile']");
   if (profileButton && state.me) {
@@ -2261,7 +2269,8 @@ function flipHint() {
 }
 
 function roleBadge(role) {
-  return `<span class="role-badge${role === "admin" ? " is-admin" : role === "whiteking" ? " is-wk" : role === "hr" ? " is-hr" : role === "kitchen" ? " is-kitchen" : role === "master" ? " is-master" : role === "engineer" ? " is-engineer" : role === "campmgr" ? " is-campmgr" : role === "security" ? " is-security" : ""}">${ROLE_LABEL[role] || role}</span>`;
+  const tone = role === "whiteking" ? "wk" : ROLES.includes(role) && role !== "user" ? role : "";
+  return `<span class="role-badge${tone ? ` is-${tone}` : ""}">${ROLE_LABEL[role] || role}</span>`;
 }
 
 function statusBadge(status) {
@@ -5460,7 +5469,7 @@ function render() {
     return;
   }
   fleetStop();
-  if (MASTER_VIEWS.includes(state.view) || CAMP_VIEWS.includes(state.view) || GUARD_VIEWS.includes(state.view)) {
+  if (MINE_VIEWS.includes(state.view)) {
     stage.innerHTML = masterView(state.view);
     masterStart();
     return;

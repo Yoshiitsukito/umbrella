@@ -1,7 +1,16 @@
 // MASTER pages (mine board, safety, competency, operations), the camp manager's camp page, the security officers'
-// violations page, and the safety strip on a worker's home page. Tables and forms are drawn from the shared schema in minecore.js, so the server checks exactly what is shown.
+// violations page, finance, the shipment and environment managers' pages, the chief engineer's purchase requests,
+// the director's read-only view of all of them, and the safety strip on a worker's home page. Tables and forms are
+// drawn from the shared schema in minecore.js, so the server checks exactly what is shown.
 import {
   ALCOHOL_LIMIT,
+  ASSET_STATUS,
+  AUDIT_STATUS,
+  BUDGET_CATS,
+  ENV_METRICS,
+  REHAB_STAGES,
+  REQUEST_STAGES,
+  SALE_STATUS,
   BLAST_STATUS,
   CAMERA_KINDS,
   CAMERA_ZONES,
@@ -50,16 +59,67 @@ import {
 } from "./minecore.js";
 import { addDays } from "./workstats.js";
 import { mountFeeds, snapshotOf, stopFeeds } from "./campcams.js";
+import { coalGrade, COAL_GRADES } from "./bizcore.js";
+import {
+  ENV_TONE,
+  REQUESTS,
+  STAGE_FOR,
+  assetCols,
+  bindBiz,
+  bizHero,
+  bizTabAlert,
+  coalBoard,
+  disposalBook,
+  envBoard,
+  envState,
+  execBoard,
+  financeOverview,
+  money,
+  myInbox,
+  netOf,
+  openReportPicker,
+  openRequest,
+  requestValue,
+  requestsTab,
+  revenueTab,
+  saleProgress,
+  stageCell,
+} from "./bizpages.js";
 
 export const MASTER_VIEWS = ["mine", "hse", "skills", "ops"];
 export const CAMP_VIEWS = ["camp"];
 export const GUARD_VIEWS = ["guard"];
-const MINE_VIEWS = [...MASTER_VIEWS, ...CAMP_VIEWS, ...GUARD_VIEWS];
 export const CAMP_ROLE = "campmgr";
 const GUARD_ROLE = "security";
-const isCamp = () => ctx?.state.me?.role === CAMP_ROLE;
-const isGuard = () => ctx?.state.me?.role === GUARD_ROLE;
-const apiBase = () => (isCamp() ? "/api/camp" : isGuard() ? "/api/guard" : "/api/master");
+/** The pages each role opens here; the director reads all of them except camp and security. */
+export const ROLE_VIEWS = {
+  master: MASTER_VIEWS,
+  campmgr: CAMP_VIEWS,
+  security: GUARD_VIEWS,
+  finance: ["finance"],
+  shipmgr: ["coal"],
+  envmgr: ["env"],
+  engineer: ["procure"],
+  director: ["exec", "finance", "coal", "env", ...MASTER_VIEWS],
+};
+export const MINE_VIEWS = [...new Set(Object.values(ROLE_VIEWS).flat())];
+const API_BASE = { campmgr: "/api/camp", security: "/api/guard", finance: "/api/finance", shipmgr: "/api/coal", envmgr: "/api/env", engineer: "/api/procure", director: "/api/exec" };
+const role = () => ctx?.state.me?.role || "";
+const isGuard = () => role() === GUARD_ROLE;
+const readOnly = () => role() === "director";
+const apiBase = () => API_BASE[role()] || "/api/master";
+const areaOf = (name) => COLLECTIONS[name].area;
+/** Which records each role may add, edit and delete; everyone else reads them. */
+const OWNED = {
+  master: (name) => ["hse", "skills", "ops"].includes(areaOf(name)),
+  campmgr: (name) => areaOf(name) === "camp",
+  security: (name) => areaOf(name) === "guard",
+  finance: (name) => areaOf(name) === "fin" && !REQUESTS.includes(name),
+  engineer: (name) => REQUESTS.includes(name),
+  shipmgr: (name) => areaOf(name) === "coal",
+  envmgr: (name) => areaOf(name) === "env",
+};
+const canWrite = (name) => Boolean(OWNED[role()]?.(name));
 
 const TABS = {
   hse: [
@@ -102,6 +162,34 @@ const TABS = {
     ["contractors", "Гэрээт", "briefcase"],
   ],
   guard: [["violations", "Зөрчил", "shield"]],
+  finance: [
+    ["overview", "Тойм", "chart"],
+    ["requests", "Хүсэлт", "gavel"],
+    ["assets", "Хөрөнгө, элэгдэл", "briefcase"],
+    ["costs", "Зардал", "wallet"],
+    ["budgets", "Төсөв", "sliders"],
+    ["revenue", "Борлуулалтын орлого", "coin"],
+  ],
+  exec: [
+    ["overview", "Гүйцэтгэх самбар", "gauge"],
+    ["approvals", "Батлах хүсэлт", "gavel"],
+  ],
+  coal: [
+    ["board", "Самбар", "grid"],
+    ["labs", "Чанарын шинжилгээ", "flask"],
+    ["shipments", "Ачилт, жинлүүр", "scale"],
+    ["sales", "Борлуулалтын гэрээ", "briefcase"],
+  ],
+  env: [
+    ["board", "Самбар", "grid"],
+    ["envReadings", "Хяналт шинжилгээ", "drop"],
+    ["rehab", "Нөхөн сэргээлт", "leaf"],
+    ["envAudits", "Хяналт шалгалт", "clipboard"],
+  ],
+  procure: [
+    ["capex", "Худалдан авах", "cart"],
+    ["disposals", "Актлах, худалдах", "tag"],
+  ],
 };
 
 const PAGES = {
@@ -111,6 +199,11 @@ const PAGES = {
   ops: ["Үйлдвэрлэл, техник", "truck"],
   camp: ["Кэмп, логистик", "camp"],
   guard: ["Хамгаалалт", "shield"],
+  finance: ["Санхүү", "coin"],
+  exec: ["Гүйцэтгэх захирал", "gauge"],
+  coal: ["Нүүрс · чанар, ачилт, борлуулалт", "coal"],
+  env: ["Байгаль орчин", "leaf"],
+  procure: ["Техник, багаж · хүсэлт", "cart"],
 };
 
 const COL_ICON = {
@@ -119,6 +212,15 @@ const COL_ICON = {
   depts: "sitemap",
   crews: "people",
   posts: "badge",
+};
+const byCreated = (a, b) => String(b.createdAt).localeCompare(String(a.createdAt));
+/** Tables ordered by something other than their first listed date. */
+const BUDGET_ORDER = Object.keys(BUDGET_CATS);
+const SORTS = {
+  capex: byCreated,
+  disposals: byCreated,
+  rehab: (a, b) => String(a.name).localeCompare(String(b.name), "mn"),
+  budgets: (a, b) => String(b.month).localeCompare(String(a.month)) || BUDGET_ORDER.indexOf(a.category) - BUDGET_ORDER.indexOf(b.category),
 };
 
 /** The one select field each table can be narrowed by, as chips; `get` reads a derived value instead. */
@@ -144,6 +246,17 @@ const FILTERS = {
   transport: { key: "dir" },
   contractors: { key: "status" },
   violations: { key: "hseStatus", get: (item) => item.hseStatus || "new", labels: () => VIOLATION_STATUS },
+  capex: { key: "stage", get: (item) => item.stage, labels: () => REQUEST_STAGES },
+  disposals: { key: "stage", get: (item) => item.stage, labels: () => REQUEST_STAGES },
+  assets: { key: "category" },
+  costs: { key: "category" },
+  budgets: { key: "month", get: (item) => item.month, labels: () => Object.fromEntries([...new Set(records("budgets").map((item) => item.month))].sort().reverse().map((month) => [month, month.replace("-", ".")])) },
+  labs: { key: "grade", get: (item) => coalGrade(item), labels: () => COAL_GRADES },
+  sales: { key: "status" },
+  shipments: { key: "sale", get: (item) => item.sale, labels: () => Object.fromEntries(records("sales").map((item) => [item.id, item.buyer])) },
+  envReadings: { key: "metric" },
+  rehab: { key: "stage" },
+  envAudits: { key: "status" },
 };
 
 const ICON = {
@@ -214,6 +327,15 @@ const ICON = {
   moon: `<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>`,
   gavel: `<path d="m13.5 4 6.5 6.5M10.5 7l6.5 6.5M12 5.5l-4 4 6.5 6.5 4-4z"/><path d="m9.5 13-6 6M3 21h9"/>`,
   gate: `<path d="M3.5 20.5V8l8.5-4.5L20.5 8v12.5"/><path d="M8 20.5v-8h8v8M8 16.5h8"/>`,
+  cart: `<path d="M3 4h2.5l2.2 10.5h10.6L20.5 7H6.6"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/>`,
+  tag: `<path d="M3.5 12.5v-8h8l9 9-8 8z"/><circle cx="8" cy="9" r="1.6"/>`,
+  coin: `<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9c-.6-.9-1.6-1.4-2.8-1.4-1.7 0-2.8.9-2.8 2.1 0 3 5.8 1.7 5.8 4.6 0 1.3-1.2 2.2-3 2.2-1.3 0-2.4-.5-3-1.4M12 6v1.6M12 16.5v1.6"/>`,
+  trend: `<path d="M3.5 17.5 9 12l3.5 3.5 8-8"/><path d="M15 7.5h5.5V13"/>`,
+  report: `<path d="M14 3.5H6.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V9z"/><path d="M14 3.5V9h5.5M8.5 17v-3M12 17v-5M15.5 17v-2"/>`,
+  leaf: `<path d="M5 19.5c0-8.5 5.5-14 15-14.5-.5 9.5-6 15-14 15"/><path d="M5 19.5c3-4.5 6.5-7.5 10.5-9.5"/>`,
+  drop: `<path d="M12 3.5s6 6.6 6 11a6 6 0 0 1-12 0c0-4.4 6-11 6-11z"/><path d="M9 15a3 3 0 0 0 3 3"/>`,
+  scale: `<path d="M12 4v16M6 20h12M5.5 7.5h13"/><path d="m5.5 7.5-3 6.5a3 3 0 0 0 6 0zM18.5 7.5l-3 6.5a3 3 0 0 0 6 0z"/>`,
+  coal: `<path d="M3.5 16 7 9.5l5-2.5 6 2 2.5 6-4 4.5H8z"/><path d="m7 9.5 3 4.5 6.5-1.5M10 14l-2 5.5"/>`,
 };
 
 let ctx = null;
@@ -243,6 +365,7 @@ function readStored(key, fallback) {
 /** Hands the module the app's helpers: { stage, state, api, render, openModal, closeModal, toast }. */
 export function initMine(context) {
   ctx = context;
+  bindBiz({ m, ctx: () => ctx, esc, ico, badge, panel, collectionPanel, num, pct, fmtDate, fmtMoment, records, recordOf, refLabel, send, paint, apiBase, role, formError });
   ctx.stage.addEventListener("click", onClick);
   ctx.stage.addEventListener("submit", onSubmit);
   ctx.stage.addEventListener("change", onChange);
@@ -289,6 +412,8 @@ const REF_LABEL = {
   depts: (item) => item.name,
   stock: (item) => `${item.code} · ${item.name}`,
   rooms: (item) => item.number,
+  sales: (item) => `${item.buyer}${item.contract ? ` · ${item.contract}` : ""}`,
+  labs: (item) => `${item.sample} · ${item.cv} ккал/кг`,
 };
 
 function refLabel(collection, id) {
@@ -332,9 +457,20 @@ async function refresh() {
 
 function setData(data) {
   m.data = data;
+  if (STAGE_FOR[role()]) syncInbox();
   alertSos();
   m.modalRepaint?.();
   paint();
+}
+
+/** Keeps the nav badge of requests awaiting finance or the director in step with the page. */
+function syncInbox() {
+  const count = myInbox();
+  if (ctx.state.live) ctx.state.live.requestInbox = count;
+  const node = document.querySelector(`#nav [data-view='${role() === "director" ? "exec" : "finance"}'] .nav-count`);
+  if (!node) return;
+  node.textContent = count > 99 ? "99+" : String(count || "");
+  node.hidden = !count;
 }
 
 function busy() {
@@ -411,7 +547,7 @@ function alertSos() {
 export function masterView(view) {
   if (!m.data) return `<div class="admin-page m-page"><section class="panel"><p class="muted">Ачаалж байна…</p></section></div>`;
   const body = view === "mine" ? dashboard() : tabbed(view);
-  return `<div class="admin-page m-page">${hero(view)}${m.data.hse ? alertStrip() : ""}${body}</div>`;
+  return `<div class="admin-page m-page${readOnly() ? " is-readonly" : ""}">${hero(view)}${m.data.hse ? alertStrip() : ""}${body}</div>`;
 }
 
 function hero(view) {
@@ -425,6 +561,8 @@ function hero(view) {
         <span class="m-pill">${ico("calendar")}${fmtDate(m.data.today)}</span>
         <span class="m-pill">${ico("clock")}${SHIFTS[m.data.shift]} ээлж</span>
         ${view === "guard" ? `<button class="chip m-hero-link" type="button" data-m="goto" data-view="passes">${ico("gate")}Хаалга, хөдөлгөөний зөвшөөрөл</button>` : ""}
+        ${["exec", "finance"].includes(view) && m.data.summary ? `<button class="chip m-hero-link" type="button" data-m="report">${ico("report")}Сарын тайлан · PDF</button>` : ""}
+        ${readOnly() && view !== "exec" ? `<span class="m-pill is-readonly">${ico("lock")}Зөвхөн харах</span>` : ""}
         <button class="icon-btn m-foldall" type="button" data-m="fold-all" title="Бүгдийг хураах / дэлгэх" aria-label="Бүгдийг хураах / дэлгэх">${ico("fold")}</button>
       </div>
       <div class="m-stats">${heroStats(view).map(([value, label, tone]) => stat(value, label, tone)).join("")}</div>
@@ -450,6 +588,7 @@ const addBtn = (name, preset) => `<button class="primary m-add" type="button" da
 
 function heroStats(view) {
   const d = m.data;
+  if (["finance", "exec", "coal", "env", "procure"].includes(view)) return bizHero(view);
   if (view === "guard") {
     const list = d.guard.violations;
     const today = list.filter((item) => localInput(Date.parse(item.at)).slice(0, 10) === d.today).length;
@@ -526,6 +665,8 @@ function alertStrip() {
 function tabAlert(tab) {
   const d = m.data;
   const now = Date.parse(d.now);
+  const biz = bizTabAlert(tab);
+  if (biz != null) return biz;
   const count = {
     incidents: () => d.hse.incidents.filter((item) => item.status === "open").length,
     violations: () => (d.guard?.violations || []).filter((item) => (item.hseStatus || "new") === "new").length,
@@ -570,7 +711,13 @@ function tabBody(view, tab) {
     transport: transportTab,
     payroll: payrollTab,
     cameras: camerasTab,
+    overview: view === "exec" ? execBoard : financeOverview,
+    requests: requestsTab,
+    approvals: requestsTab,
+    revenue: revenueTab,
+    board: view === "coal" ? coalBoard : view === "env" ? envBoard : boardTab,
   };
+  if (view === "procure") return requestsTab([tab]);
   return special[tab] ? special[tab]() : collectionPanel(tab);
 }
 
@@ -631,6 +778,25 @@ const DECOR = {
     kind: (item) => `${esc(VIOLATION_KINDS[item.kind] || item.kind)}${item.photo ? ` ${ico("photo", "m-ico tiny")}` : ""}`,
     severity: (item) => badge(SEVERITIES[item.severity], TONE.severity[item.severity]),
   },
+  capex: { price: (item) => esc(money(item.price)), title: (item) => `<b>${esc(item.title)}</b>` },
+  disposals: { value: (item) => esc(money(item.value)) },
+  assets: { cost: (item) => esc(money(item.cost)), status: (item) => badge(ASSET_STATUS[item.status], item.status === "active" ? "ok" : "") },
+  costs: { amount: (item) => esc(money(item.amount, { short: false })) },
+  budgets: { amount: (item) => esc(money(item.amount)), month: (item) => esc(item.month.replace("-", ".")) },
+  labs: { cv: (item) => `<b>${num(item.cv)}</b>` },
+  sales: { price: (item) => `${num(item.price)} ₮`, status: (item) => badge(SALE_STATUS[item.status], { open: "info", done: "ok", cancelled: "" }[item.status]) },
+  shipments: { gross: (item) => `${item.gross} т` },
+  envReadings: {
+    value: (item) => {
+      const state = envState(item);
+      return badge(`${num(item.value)} ${ENV_METRICS[item.metric]?.unit || ""}${state === "over" ? " · хэтэрсэн" : ""}`.trim(), ENV_TONE[state]);
+    },
+  },
+  rehab: { stage: (item) => badge(REHAB_STAGES[item.stage], { planned: "", technical: "warn", biological: "info", handed: "ok" }[item.stage]) },
+  envAudits: {
+    due: (item) => (item.status === "open" && item.due && item.due < m.data.today ? badge(`${fmtDate(item.due)} · хэтэрсэн`, "bad") : esc(fmtDate(item.due))),
+    status: (item) => badge(AUDIT_STATUS[item.status], item.status === "open" ? "warn" : "ok"),
+  },
 };
 
 const violatorOf = (item) => (item.party === "staff" ? nameOf(item.uid) : item.person || "–");
@@ -685,6 +851,32 @@ const EXTRA_COLS = {
     const note = item.hseNote || (item.hseBy ? `${item.hseBy} · ${fmtMoment(item.hseAt)}` : "");
     return `<span class="m-who">${badge(label, HSE_TONE[status])}${note ? `<small title="${esc(item.hseBy ? `${item.hseBy} · ${fmtMoment(item.hseAt)}` : "")}">${esc(note)}</small>` : ""}</span>`;
   }]],
+  capex: [["Нийт дүн", (item) => `<b>${esc(money(requestValue("capex", item)))}</b>`], ["Явц", stageCell]],
+  disposals: [["Дансны үнэ", (item) => {
+    const book = disposalBook(item);
+    return book == null ? `<span class="muted">–</span>` : esc(money(book));
+  }], ["Явц", stageCell]],
+  assets: [...assetCols()],
+  budgets: [["Гүйцэтгэл", (item) => {
+    const actual = m.data.actuals?.[item.month]?.[item.category] ?? 0;
+    const ratio = item.amount ? actual / item.amount : 0;
+    return `<span class="m-who">${badge(`${Math.round(ratio * 100)}%`, ratio > 1 ? "bad" : ratio > 0.9 ? "warn" : "ok")}<small>${esc(money(actual))}</small></span>`;
+  }]],
+  labs: [["Зэрэглэл", (item) => badge(COAL_GRADES[coalGrade(item)], { premium: "ok", standard: "info", low: "warn" }[coalGrade(item)])]],
+  sales: [["Ачсан", (item) => {
+    const progress = saleProgress(item, records("shipments"));
+    return `<span class="m-who"><b>${num(Math.round(progress.shipped))} т · ${pct(progress.share)}</b><small>${num(Math.round(progress.left))} т үлдсэн</small></span>`;
+  }], ["Орлого", (item) => esc(money(saleProgress(item, records("shipments")).value))]],
+  shipments: [["Цэвэр жин", (item) => `<b>${netOf(item)} т</b>`], ["Дүн", (item) => esc(money(netOf(item) * (recordOf("sales", item.sale)?.price || 0)))]],
+  envReadings: [["Хязгаар", (item) => {
+    const spec = ENV_METRICS[item.metric];
+    if (!spec || spec.max == null) return "–";
+    return esc(`${spec.min != null ? `${spec.min}–${spec.max}` : `≤ ${spec.max}`} ${spec.unit}`);
+  }]],
+  rehab: [["Гүйцэтгэл", (item) => {
+    const ratio = item.planned ? item.done / item.planned : 0;
+    return `<span class="bz-cell-meter"><span class="bz-meter is-${ratio >= 1 ? "ok" : ratio >= 0.5 ? "warn" : "bad"}"><i style="width:${Math.min(100, Math.round(ratio * 100))}%"></i></span>${pct(ratio)}</span>`;
+  }]],
 };
 
 function assignCheck(item) {
@@ -715,6 +907,8 @@ function cellOf(name, field, item) {
       return esc(refLabel(field.ref, value));
     case "date":
       return esc(fmtDate(value));
+    case "month":
+      return esc(String(value).replace("-", "."));
     case "datetime":
       return esc(fmtMoment(value));
     case "bool":
@@ -729,6 +923,7 @@ function cellOf(name, field, item) {
 }
 
 function sortKey(name) {
+  if (SORTS[name]) return SORTS[name];
   const fields = COLLECTIONS[name].fields;
   const when = fields.find((field) => field.list && (field.type === "datetime" || field.type === "date"));
   if (when) return (a, b) => String(b[when.key] || "").localeCompare(String(a[when.key] || "")) || String(b.createdAt).localeCompare(String(a.createdAt));
@@ -757,6 +952,20 @@ function rowActions(name, item) {
   const buttons = [];
   const button = (action, icon, title, extra = "") => `<button class="icon-btn" type="button" data-m="${action}" data-name="${name}" data-id="${item.id}" title="${esc(title)}" aria-label="${esc(title)}"${extra}>${ico(icon)}</button>`;
   const quick = (patch, icon, title) => button("quick", icon, title, ` data-patch='${esc(JSON.stringify(patch))}'`);
+  if (REQUESTS.includes(name)) {
+    const decides = STAGE_FOR[role()] === item.stage;
+    buttons.push(button("request", decides ? "gavel" : "list", decides ? "Шийдвэрлэх" : "Явц, дэлгэрэнгүй"));
+    if (canWrite(name) && item.stage === "finance") {
+      buttons.push(button("edit", "edit", "Засах"));
+      buttons.push(`<button class="icon-btn danger" type="button" data-m="delete" data-name="${name}" data-id="${item.id}" title="Устгах" aria-label="Устгах">${ico("trash")}</button>`);
+    }
+    return `<div class="acts">${buttons.join("")}</div>`;
+  }
+  if (readOnly()) {
+    if ((name === "incidents" || name === "violations") && item.photo) buttons.push(button("photo", "photo", "Зураг харах"));
+    if (name === "transport") buttons.push(button("manifest", "people", "Зорчигчийн жагсаалт"));
+    return `<div class="acts">${buttons.join("")}</div>`;
+  }
   if (name === "incidents") {
     if (item.photo) buttons.push(button("photo", "photo", "Зураг харах"));
     buttons.push(`<button class="icon-btn" type="button" data-m="new" data-name="capa" data-preset='${esc(JSON.stringify({ incident: item.id }))}' title="CAPA нэмэх" aria-label="CAPA нэмэх">${ico("list")}</button>`);
@@ -786,6 +995,7 @@ function rowActions(name, item) {
     }
     if ((item.hseStatus || "new") !== "new") return `<div class="acts">${buttons.join("")}</div>`;
   }
+  if (!canWrite(name)) return `<div class="acts">${buttons.join("")}</div>`;
   if (!schema.immutable) buttons.push(button("edit", "edit", "Засах"));
   if (!schema.immutable) buttons.push(`<button class="icon-btn danger" type="button" data-m="delete" data-name="${name}" data-id="${item.id}" title="Устгах" aria-label="Устгах">${ico("trash")}</button>`);
   return `<div class="acts">${buttons.join("")}</div>`;
@@ -856,7 +1066,7 @@ function collectionPanel(name, { title, filter, key = name } = {}) {
   const tools = `
     <label class="m-searchbox">${ico("search")}<input type="search" class="m-search" data-mq="${esc(key)}" value="${esc(m.query[key] || "")}" placeholder="Хайх" aria-label="${esc(schema.label)} хайх" /></label>
     <button class="icon-btn" type="button" data-m="csv" data-name="${name}" title="CSV татах" aria-label="CSV татах">${ico("download")}</button>
-    ${name === "violations" && !isGuard() ? "" : addBtn(name)}`;
+    ${canWrite(name) ? addBtn(name) : ""}`;
   const body = `
     ${spec ? chipsHtml(key, base, spec) : ""}
     <div class="m-scroll"><table class="m-table">
@@ -942,6 +1152,8 @@ function fieldHtml(name, field, values, item) {
       return wrap(`<input type="number" name="${field.key}" value="${esc(value)}" min="${field.min}" max="${field.max}" step="${field.step || 1}"${required} />`);
     case "date":
       return wrap(`<input type="date" name="${field.key}" value="${esc(value)}"${required} />`);
+    case "month":
+      return wrap(`<input type="month" name="${field.key}" value="${esc(value)}"${required} />`);
     case "datetime":
       return wrap(`<input type="datetime-local" name="${field.key}" value="${esc(inputValue(field, value))}"${required} />`);
     case "time":
@@ -1834,6 +2046,22 @@ function setFolded(section, folded) {
 
 const saveFold = () => localStorage.setItem("mine-fold", JSON.stringify([...m.fold]));
 
+/** Clicks that change records; the director's read-only pages ignore them (the server refuses them too). */
+const WRITE_ACTIONS = new Set(["new", "delete", "quick", "site", "sos", "beds-auto", "wxsim-clear", "talk-acks", "muster-open", "vio-decide", "pass"]);
+
+/** Every filled field of a record, for read-only viewers. */
+function openDetail(name, id) {
+  const item = recordOf(name, id);
+  if (!item) return;
+  const fields = COLLECTIONS[name].fields.filter((field) => {
+    const value = item[field.key];
+    return field.type === "photo" ? Boolean(item.photo) : !(value === null || value === undefined || value === "" || (Array.isArray(value) && !value.length));
+  });
+  const extras = EXTRA_COLS[name] || [];
+  const body = `<dl class="m-dl">${fields.map((field) => `<div class="${["long", "users", "checks", "photo"].includes(field.type) ? "is-wide" : ""}"><dt>${esc(field.label)}</dt><dd>${detailValue(name, field, item)}</dd></div>`).join("")}${extras.map(([label, render]) => `<div><dt>${esc(label)}</dt><dd>${render(item)}</dd></div>`).join("")}</dl><div class="modal-actions"><button class="chip" type="button" data-close>Хаах</button></div>`;
+  ctx.openModal({ shield: ico(COL_ICON[name] || "list"), title: esc(COLLECTIONS[name].label), sub: "Зөвхөн харах", body, className: "m-modal" });
+}
+
 async function onClick(event) {
   const button = event.target.closest("[data-m]");
   if (!button) {
@@ -1844,6 +2072,10 @@ async function onClick(event) {
   const { m: action, name, id } = button.dataset;
   if (action.startsWith("w-")) return workerClick(button);
   if (!m.data) return;
+  if (readOnly() && action === "edit") return openDetail(name, id);
+  if (readOnly() && WRITE_ACTIONS.has(action)) return;
+  if (action === "request") openRequest(name, id);
+  if (action === "report") openReportPicker();
   if (action === "fold") {
     const section = button.closest("[data-fold-key]");
     setFolded(section, !section.classList.contains("is-folded"));
@@ -1909,10 +2141,19 @@ async function onSubmit(event) {
   event.preventDefault();
   const kind = form.dataset.mform;
   const data = Object.fromEntries(new FormData(form));
+  if (readOnly() && !kind.startsWith("w-")) return;
   const button = form.querySelector("button[type='submit']");
   if (button) button.disabled = true;
   try {
     if (kind.startsWith("w-")) return await workerSubmit(kind, form, data);
+    if (kind === "fuel") {
+      await send(`${apiBase()}/settings`, "POST", { fuelPrice: data.fuelPrice });
+      ctx.toast("Санхүү", "Түлшний үнэ хадгалагдлаа");
+    }
+    if (kind === "opening") {
+      await send(`${apiBase()}/settings`, "POST", { opening: data.opening });
+      ctx.toast("Нүүрсний нөөц", "Эхний үлдэгдэл хадгалагдлаа");
+    }
     if (kind === "settings") {
       await send("/api/master/settings", "POST", { enforce: form.elements.enforce.checked, medical: form.elements.medical.checked, alcoholHours: data.alcoholHours, required: [...form.querySelectorAll("[name=required]:checked")].map((input) => input.value) });
       ctx.toast("Картын хориг", "Тохиргоо хадгалагдлаа");

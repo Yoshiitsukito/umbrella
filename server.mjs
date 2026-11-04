@@ -84,8 +84,32 @@ import { FLEET_ROLES, fleetView, fleetWorkorder, seedFleet, setDispatch } from "
 import { CAMP_COLLECTIONS, CAMP_ROLE, campView, seedCamp } from "./lib/camp.mjs";
 import { GUARD_COLLECTIONS, GUARD_ROLE, decideViolation, guardView } from "./lib/guard.mjs";
 import { cancelPass, decidePass, gatePass, ownPasses, passInbox, passesView, requestPass } from "./lib/passes.mjs";
+import {
+  COAL_COLLECTIONS,
+  DIRECTOR_ROLE,
+  ENGINEER_ROLE,
+  ENV_COLLECTIONS,
+  ENV_ROLE,
+  FINANCE_ROLE,
+  FIN_COLLECTIONS,
+  REQUEST_COLLECTIONS,
+  SHIP_ROLE,
+  bizReport,
+  coalView,
+  decideRequest,
+  ensureBiz,
+  envView,
+  execView,
+  financeView,
+  procureView,
+  requestInbox,
+  saveCoalSettings,
+  saveFinSettings,
+  seedBiz,
+} from "./lib/biz.mjs";
 import { PASS_ROLES } from "./public/js/passcore.js";
-import { COLLECTIONS, payrollRows } from "./public/js/minecore.js";
+import { COLLECTIONS, localDay, payrollRows } from "./public/js/minecore.js";
+import { MONTH } from "./public/js/bizcore.js";
 import { applyRestUpdate, cleanPlan, ensureWorkplan, patternsFor, restBlock, restUpdates, leaveRequest, noteAttempt, pruneLeaves } from "./lib/workplan.mjs";
 import { faceOf, faceProgress, frameBuffer, photoFace, warmFace } from "./lib/face.mjs";
 import { energyFromSleep, hydrationTarget } from "./lib/wellness.mjs";
@@ -757,6 +781,7 @@ function view(db, uid = db.profile.id) {
     leaves: (db.leaves || []).filter((item) => item.uid === uid),
     passes: STAFF_ROLES.includes(role) ? ownPasses(db, uid) : [],
     passInbox: PASS_ROLES.includes(role) ? passInbox(db, role) : 0,
+    requestInbox: requestInbox(db, role),
     cardAttempts: (db.cardAttempts || []).filter((item) => item.uid === uid && Date.now() - Date.parse(item.at) < 14 * 24 * 3600 * 1000),
     briefing: db.briefings.find((item) => item.localDate === today) || null,
     weather: clientWeather(db.weather),
@@ -2200,7 +2225,7 @@ async function routeMaster(req, res, url, me) {
     await sendPhoto(res, photo[1], () => true);
     return;
   }
-  if (await routeRecords(req, res, me, "/api/master", pathname, (name) => !CAMP_COLLECTIONS.includes(name) && !GUARD_COLLECTIONS.includes(name), masterView)) return;
+  if (await routeRecords(req, res, me, "/api/master", pathname, (name) => MASTER_AREAS.includes(COLLECTIONS[name].area), masterView)) return;
   if (req.method === "POST") {
     for (const [pattern, action] of MASTER_ACTIONS) {
       const match = pathname.match(pattern);
@@ -2214,6 +2239,72 @@ async function routeMaster(req, res, url, me) {
         return { ...outcome, view: masterView(db, now) };
       });
       reply(result);
+      return;
+    }
+  }
+  json(res, 404, { error: "Олдсонгүй" });
+}
+
+const MASTER_AREAS = ["hse", "skills", "ops"];
+const decideAction = (db, body, me, now, match) => decideRequest(db, match[1], match[2], { role: me.role, me, ok: body.ok === true, note: body.note, now });
+const DECIDE_PATH = (base) => new RegExp(`^${base}/requests/(capex|disposals)/([\\w-]+)/decide$`);
+
+/**
+ * Finance, the director, the shipment and environment managers, and the chief engineer's purchase requests: the
+ * base path each role alone may use, the view it reads, the records it owns, and its own actions.
+ */
+const ROLE_ROUTES = [
+  {
+    role: FINANCE_ROLE,
+    base: "/api/finance",
+    deny: "Зөвхөн санхүүд зориулсан",
+    viewOf: financeView,
+    owns: (name) => FIN_COLLECTIONS.includes(name),
+    report: true,
+    actions: [
+      [DECIDE_PATH("/api/finance"), decideAction],
+      [/^\/api\/finance\/settings$/, (db, body) => saveFinSettings(db, body)],
+    ],
+  },
+  { role: DIRECTOR_ROLE, base: "/api/exec", deny: "Зөвхөн гүйцэтгэх захиралд зориулсан", viewOf: execView, report: true, photos: true, actions: [[DECIDE_PATH("/api/exec"), decideAction]] },
+  { role: SHIP_ROLE, base: "/api/coal", deny: "Зөвхөн ачилтын менежерт зориулсан", viewOf: coalView, owns: (name) => COAL_COLLECTIONS.includes(name), actions: [[/^\/api\/coal\/settings$/, (db, body) => saveCoalSettings(db, body)]] },
+  { role: ENV_ROLE, base: "/api/env", deny: "Зөвхөн байгаль орчны менежерт зориулсан", viewOf: envView, owns: (name) => ENV_COLLECTIONS.includes(name) },
+  { role: ENGINEER_ROLE, base: "/api/procure", deny: "Худалдан авах, актлах хүсэлтийг уулын ахлах инженер гаргана", viewOf: procureView, owns: (name) => REQUEST_COLLECTIONS.includes(name) },
+];
+
+async function routeRole(req, res, url, me, { base, viewOf, owns, report, photos, actions = [] }) {
+  const now = Date.now();
+  const { pathname } = url;
+  if (req.method === "GET" && pathname === base) {
+    json(res, 200, await inspect((db) => viewOf(db, now)));
+    return;
+  }
+  if (report && req.method === "GET" && pathname === `${base}/report`) {
+    const month = url.searchParams.get("month") || localDay(now).slice(0, 7);
+    if (!MONTH.test(month)) {
+      json(res, 400, { error: "Сар буруу" });
+      return;
+    }
+    json(res, 200, await inspect((db) => bizReport(db, month, now)));
+    return;
+  }
+  const photo = photos && req.method === "GET" && pathname.match(new RegExp(`^${base}/photo/([\\w-]+)$`));
+  if (photo) {
+    await sendPhoto(res, photo[1], () => true);
+    return;
+  }
+  if (owns && (await routeRecords(req, res, me, base, pathname, owns, viewOf))) return;
+  if (req.method === "POST") {
+    for (const [pattern, action] of actions) {
+      const match = pathname.match(pattern);
+      if (!match) continue;
+      const body = await readBody(req);
+      const result = await update((db) => {
+        ensureBiz(db);
+        const outcome = action(db, body, me, now, match);
+        return outcome.error ? outcome : { ...outcome, view: viewOf(db, now) };
+      });
+      json(res, result.error ? result.status || 400 : 200, result);
       return;
     }
   }
@@ -2360,6 +2451,15 @@ async function routeApi(req, res, url) {
         return;
       }
       await routeFleet(req, res, url, me);
+      return;
+    }
+    const roleRoute = ROLE_ROUTES.find((item) => url.pathname === item.base || url.pathname.startsWith(`${item.base}/`));
+    if (roleRoute) {
+      if (me.role !== roleRoute.role) {
+        json(res, 403, { error: roleRoute.deny });
+        return;
+      }
+      await routeRole(req, res, url, me, roleRoute);
       return;
     }
     if (url.pathname.startsWith("/api/mine/")) {
@@ -2862,6 +2962,8 @@ update((db) => {
   if (fleet?.added) console.log(`Уурхайн техникийн самбар: ${fleet.added} нэмэлт техник`);
   const camp = seedCamp(db);
   if (camp?.added) console.log(`Кэмп: ${camp.added} туршилтын камер`);
+  const biz = seedBiz(db);
+  if (biz) console.log(`Санхүү, нүүрс, байгаль орчин: ${biz.records} туршилтын бүртгэл`);
 })
   .then(() => update((db) => ensureFresh(db, true)))
   .catch((error) => console.error(error.message))
