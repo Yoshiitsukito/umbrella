@@ -3,6 +3,7 @@
 import { localInput } from "./minecore.js";
 import { APPROVER_LABEL, GATE_STEPS, PASS_APPROVERS, PASS_KINDS, PASS_SHORT, PASS_STATUS, awaits, nextGate } from "./passcore.js";
 import { PLAN_LABEL } from "./workstats.js";
+import { enterStage } from "./motion.js";
 
 export const PASS_VIEWS = ["passes"];
 
@@ -135,6 +136,7 @@ function paint(force = false) {
   if (!PASS_VIEWS.includes(ctx.state.view) || (!force && busy())) return;
   const search = ctx.stage.querySelector(".ps-search");
   const focused = search && document.activeElement === search;
+  if (ctx.stage.querySelector(".is-loading")) enterStage(ctx.stage);
   ctx.stage.classList.add("is-quiet");
   ctx.stage.innerHTML = passesView();
   if (focused) {
@@ -184,7 +186,7 @@ const ROLE_NOTE = {
 };
 
 export function passesView() {
-  if (!p.data) return `<div class="admin-page m-page"><section class="panel"><p class="muted">Ачаалж байна…</p></section></div>`;
+  if (!p.data) return `<div class="admin-page m-page"><section class="panel is-loading"><p class="muted">Ачаалж байна…</p></section></div>`;
   const role = p.data.role;
   const tabs = TABS[role] || TABS.engineer;
   const tab = tabs.some(([key]) => key === p.tab[role]) ? p.tab[role] : tabs[0][0];

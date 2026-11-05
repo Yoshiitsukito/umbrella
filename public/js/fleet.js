@@ -1,6 +1,7 @@
 // Fleet control centre for the chief mining engineer: live map, selected unit, production and equipment state.
 import { EQUIP_TYPES, PRIORITIES, WO_KINDS, localInput } from "./minecore.js";
 import { LEAVE_LABEL, WEEKDAY_SHORT } from "./workstats.js";
+import { enterStage } from "./motion.js";
 import { FACES, MATERIALS, PHASES, SITE, ROADS, ZONES, fleetState, fuelLevel, haulTotals, hourlyHaul, opClock, shiftDayStart, zoneBox } from "./fleetcore.js";
 
 export const FLEET_VIEWS = ["fleet"];
@@ -184,6 +185,7 @@ async function send(path, body) {
 
 function mount() {
   if (!FLEET_VIEWS.includes(ctx.state.view)) return;
+  if (ctx.stage.querySelector(".is-loading")) enterStage(ctx.stage);
   ctx.stage.classList.add("is-quiet");
   ctx.stage.innerHTML = fleetView();
   f.parts.clear();
@@ -218,7 +220,7 @@ function frame(time) {
 /* ---------- page frame ---------- */
 
 export function fleetView() {
-  if (!f.data) return `<div class="fl-page"><section class="fl-card"><p class="fl-muted">Ачаалж байна…</p></section></div>`;
+  if (!f.data) return `<div class="fl-page"><section class="fl-card is-loading"><p class="fl-muted">Ачаалж байна…</p></section></div>`;
   return `<div class="fl-page">
     <header class="fl-head">
       <div class="fl-brand">

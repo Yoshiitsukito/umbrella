@@ -65,6 +65,7 @@ import {
 import { addDays } from "./workstats.js";
 import { mountFeeds, snapshotOf, stopFeeds } from "./campcams.js";
 import { coalGrade, COAL_GRADES } from "./bizcore.js";
+import { enterStage, morph } from "./motion.js";
 import {
   ENV_TONE,
   REQUESTS,
@@ -506,6 +507,7 @@ function paint(force = false) {
     return;
   }
   const scroll = ctx.stage.querySelector(".m-tabs")?.scrollLeft || 0;
+  if (ctx.stage.querySelector(".is-loading")) enterStage(ctx.stage);
   ctx.stage.classList.add("is-quiet");
   ctx.stage.innerHTML = masterView(ctx.state.view);
   const tabs = ctx.stage.querySelector(".m-tabs");
@@ -565,7 +567,7 @@ function alertSos() {
 /* ---------- page frame ---------- */
 
 export function masterView(view) {
-  if (!m.data) return `<div class="admin-page m-page"><section class="panel"><p class="muted">Ачаалж байна…</p></section></div>`;
+  if (!m.data) return `<div class="admin-page m-page"><section class="panel is-loading"><p class="muted">Ачаалж байна…</p></section></div>`;
   const body = view === "mine" ? dashboard() : tabbed(view);
   return `<div class="admin-page m-page${readOnly() ? " is-readonly" : ""}">${hero(view)}${noticeStrip()}${m.data.hse ? alertStrip() : ""}${body}</div>`;
 }
@@ -2249,7 +2251,10 @@ async function onClick(event) {
   if (action === "tab") {
     m.tab[button.dataset.page] = button.dataset.tab;
     localStorage.setItem("mine-tabs", JSON.stringify(m.tab));
-    paint(true);
+    morph(() => {
+      paint(true);
+      enterStage(ctx.stage, "is-swapping", 700);
+    });
   }
   if (action === "new") openForm(name, null, button.dataset.preset ? JSON.parse(button.dataset.preset) : {});
   if (action === "edit") openForm(name, recordOf(name, id));

@@ -61,6 +61,7 @@ import { MINE_VIEWS, ROLE_VIEWS, initMine, masterReset, masterStart, masterStop,
 import { FLEET_VIEWS, fleetReset, fleetStart, fleetStop, fleetView, initFleet } from "./fleet.js";
 import { PASS_KINDS, PASS_ROLES, PASS_SHORT } from "./passcore.js";
 import { PASS_VIEWS, initPasses, passIco, passStatusBadge, passTrail, passWhen, passesReset, passesStart, passesStop, passesView } from "./passes.js";
+import { enterStage } from "./motion.js";
 
 // Google Map Tiles API is not enabled on the project yet; set to true once it is.
 const TRAFFIC_ENABLED = false;
@@ -658,7 +659,7 @@ function playBriefing() {
 
 function homeView() {
   const live = state.live;
-  if (!live?.wellness) return `<section class="panel"><p class="muted">Ачаалж байна…</p></section>`;
+  if (!live?.wellness) return `<section class="panel is-loading"><p class="muted">Ачаалж байна…</p></section>`;
   const info = shiftNow(live);
   const weather = live.weather;
   const briefing = live.briefing;
@@ -1257,7 +1258,7 @@ function meHistory(live) {
 
 function attendanceView() {
   const live = state.live;
-  if (!live?.shifts) return `<section class="panel"><p class="muted">Ачаалж байна…</p></section>`;
+  if (!live?.shifts) return `<section class="panel is-loading"><p class="muted">Ачаалж байна…</p></section>`;
   const ctx = meContext(live);
   return `
     <div class="me-page">
@@ -1954,7 +1955,7 @@ function startBreath() {
 
 function healthView() {
   const live = state.live;
-  if (!live?.wellness) return `<section class="panel"><p class="muted">Ачаалж байна…</p></section>`;
+  if (!live?.wellness) return `<section class="panel is-loading"><p class="muted">Ачаалж байна…</p></section>`;
   const ctx = wellCtx(live);
   const energy = live.energy;
   const health = live.health;
@@ -2556,7 +2557,7 @@ function downloadCardQr(user) {
 }
 
 function adminLoading() {
-  return `<section class="panel"><p class="muted">Ачаалж байна…</p></section>`;
+  return `<section class="panel is-loading"><p class="muted">Ачаалж байна…</p></section>`;
 }
 
 function selectedUser() {
@@ -5487,6 +5488,7 @@ function render() {
     stopSpeaking();
     state.briefing = false;
   }
+  if (state.view !== state.renderedView || stage.querySelector(".is-loading")) enterStage(stage);
   stage.classList.toggle("is-quiet", state.view === state.renderedView);
   state.renderedView = state.view;
   renderChrome();
@@ -6537,7 +6539,27 @@ function applyTheme(theme) {
 }
 
 applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
-themeBtn.addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light"));
+themeBtn.addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  if (!document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    applyTheme(next);
+    return;
+  }
+  const box = themeBtn.getBoundingClientRect();
+  const x = box.left + box.width / 2;
+  const y = box.top + box.height / 2;
+  const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const root = document.documentElement;
+  root.classList.add("is-theming");
+  const flip = document.startViewTransition(() => applyTheme(next));
+  flip.finished.finally(() => root.classList.remove("is-theming"));
+  flip.ready.then(() => {
+    root.animate(
+      { clipPath: [`circle(0 at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+      { duration: 620, easing: "cubic-bezier(0.22, 1, 0.36, 1)", pseudoElement: "::view-transition-new(root)" },
+    );
+  }, () => {});
+});
 
 const shell = document.querySelector("#shell");
 const loginScreen = document.querySelector("#login");
