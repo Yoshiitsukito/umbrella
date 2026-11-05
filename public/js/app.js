@@ -255,6 +255,15 @@ function renderChrome() {
     profileButton.dataset.tip = tip;
     profileButton.setAttribute("aria-label", `Профайл: ${tip}`);
   }
+  const hello = document.querySelector("#rail-hello");
+  if (hello && state.me) {
+    const now = new Date();
+    const html = `${avatar(state.me)}<small>${WEEKDAYS[now.getDay()]} гараг · ${now.getMonth() + 1}-р сарын ${now.getDate()}</small><b>${greeting(now.getHours())},<br />${esc(state.me.displayName || state.me.username)}!</b><span>${esc(ROLE_LABEL[state.me.role] || "")}</span>`;
+    if (hello.dataset.sig !== html) {
+      hello.innerHTML = html;
+      hello.dataset.sig = html;
+    }
+  }
   maybeNotify(live?.weather?.precip);
 }
 
