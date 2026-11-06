@@ -3269,9 +3269,9 @@ tr.is-open .m-row-toggle .m-ico { transform: none; }
 .fl-sel[hidden] { display: none; }
 .fl-sel, .fl-legend { touch-action: auto; }
 .fl-sel [data-fl-sel-live] { display: grid; gap: 10px; }
-.fl-model { position: relative; height: 210px; overflow: hidden; border: 1px solid var(--fl-line); border-radius: 12px; background: #101216; }
+.fl-model { position: relative; height: 240px; overflow: hidden; border: 1px solid rgba(80, 180, 255, 0.35); border-radius: 12px; background: #071422; box-shadow: inset 0 0 28px rgba(30, 120, 220, 0.2); }
 .fl-model canvas { display: block; width: 100%; height: 100%; }
-.fl-model span { position: absolute; top: 8px; left: 10px; color: rgba(255, 255, 255, 0.62); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; pointer-events: none; }
+.fl-model span { position: absolute; top: 8px; left: 10px; color: rgba(170, 225, 255, 0.82); font-size: 10px; font-weight: 700; letter-spacing: 0.14em; pointer-events: none; }
 .fl-sel-head { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; }
 .fl-sel-ico { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
 .fl-sel-head b { display: block; color: var(--fl-strong); font-size: 16px; }
