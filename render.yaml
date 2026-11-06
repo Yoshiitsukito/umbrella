@@ -54,3 +54,27 @@ services:
         sync: false
       - key: AMADEUS_HOST
         sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM
+        sync: false
+      - key: SMS_GATEWAY_URL
+        sync: false
+      - key: SMS_GATEWAY_BODY
+        sync: false
+      - key: SMS_GATEWAY_AUTH
+        sync: false
+      - key: BACKUP_DIR
+        sync: false

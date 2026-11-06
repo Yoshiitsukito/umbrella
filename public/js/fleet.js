@@ -3,6 +3,7 @@ import { EQUIP_TYPES, PRIORITIES, WO_KINDS, localInput } from "./minecore.js";
 import { LEAVE_LABEL, WEEKDAY_SHORT } from "./workstats.js";
 import { enterStage } from "./motion.js";
 import { FACES, MATERIALS, PHASES, SITE, ROADS, ZONES, fleetState, fuelLevel, haulTotals, hourlyHaul, opClock, shiftDayStart, zoneBox } from "./fleetcore.js";
+import { startEquipModel } from "./equip3d.js";
 
 export const FLEET_VIEWS = ["fleet"];
 
@@ -137,11 +138,17 @@ export async function fleetStart() {
   else mount();
 }
 
+function stopModel() {
+  f.modelStop?.();
+  f.modelStop = null;
+}
+
 export function fleetStop() {
   clearInterval(f.timer);
   cancelAnimationFrame(f.raf);
   f.timer = 0;
   f.raf = 0;
+  stopModel();
 }
 
 export function fleetReset() {
@@ -185,6 +192,7 @@ async function send(path, body) {
 
 function mount() {
   if (!FLEET_VIEWS.includes(ctx.state.view)) return;
+  stopModel();
   if (ctx.stage.querySelector(".is-loading")) enterStage(ctx.stage);
   ctx.stage.classList.add("is-quiet");
   ctx.stage.innerHTML = fleetView();
@@ -745,16 +753,23 @@ function paintSelected(full) {
   const unit = f.sel && unitOf(f.sel);
   const record = f.sel && recordOf(f.sel);
   if (!unit || !record) {
+    stopModel();
     box.hidden = true;
     box.innerHTML = "";
     box.dataset.unit = "";
     return;
   }
   box.hidden = false;
-  if (box.dataset.unit !== unit.id || (full && !busy())) {
+  const changed = box.dataset.unit !== unit.id;
+  if (changed || (full && !busy() && !box.querySelector("[data-fl-model]"))) {
+    stopModel();
     box.dataset.unit = unit.id;
-    box.innerHTML = `<div data-fl-sel-live></div>${selActions(unit, record)}`;
+    box.innerHTML = `<div class="fl-model" data-fl-model><canvas aria-label="${esc(unit.code)} 3D загвар"></canvas><span>3D загвар</span></div><div data-fl-sel-live></div>${selActions(unit, record)}`;
+    f.modelStop = startEquipModel(box.querySelector("canvas"), unit.type);
     f.parts.delete("sel");
+  } else if (full && !busy()) {
+    const actions = box.querySelector(".fl-sel-actions");
+    if (actions) actions.outerHTML = selActions(unit, record);
   }
   const html = selLive(unit, record);
   if (f.parts.get("sel") === html) return;

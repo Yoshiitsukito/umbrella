@@ -7,8 +7,26 @@ import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "./lib/env.mjs";
-import { inspect, storageLabel, update } from "./lib/store.mjs";
-import { firebaseConfigured } from "./lib/firebase.mjs";
+import { inspect, replaceAll, storageLabel, update } from "./lib/store.mjs";
+import { createDailyBackups, firebaseConfigured, managedBackups } from "./lib/firebase.mjs";
+import {
+  NOTICE_TITLE,
+  addSubscription,
+  alertPrefs,
+  channelConfig,
+  channelStatus,
+  claimDeliveries,
+  cleanPhone,
+  cleanPrefs,
+  ensureVapid,
+  hasDueDeliveries,
+  recordDeliveries,
+  removeSubscription,
+  sendJob,
+  vapidOf,
+} from "./lib/notify.mjs";
+import { ACTIONS as AUDIT_ACTIONS, auditDays, auditList, auditLog, bodySummary, diffRecords, findAudit, snapshotOf } from "./lib/audit.mjs";
+import { MAX_UPLOAD, backupDir, backupDue, backupSettings, listBackups, mergeRestore, parseBackup, pruneBackups, readBackup, writeBackup } from "./lib/backup.mjs";
 import {
   ROLES,
   STAFF_ROLES,
@@ -79,6 +97,7 @@ import {
   stopLone,
   updateRecord,
   updateSos,
+  restoreRecord,
   sweepService,
   workerMine,
 } from "./lib/mine.mjs";
@@ -243,7 +262,8 @@ function readBody(req, limit = 1_000_000) {
     req.on("end", () => {
       if (!chunks.length) return resolve({});
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        req.auditBody = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        resolve(req.auditBody);
       } catch {
         reject(new Error("JSON буруу"));
       }
@@ -892,6 +912,91 @@ function noteLoginFail(ip) {
   loginFails.set(ip, entry);
 }
 
+const auditQueue = [];
+/** Change requests under these bases are logged; personal wellbeing data and the station's scans are not. */
+const AUDITED_PATHS = /^\/api\/(admin|hr|kitchen|master|camp|guard|passes|fleet|finance|exec|coal|env|maint|procure|mine|leaves|me)(\/|$)/;
+const NO_BODY_PATHS = /password|backups|\/push$/;
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const actorOf = (user) => (user ? { by: user.id, who: user.displayName || user.username || "", role: user.role } : {});
+
+/** For actions whose request does not write the store itself; written together with the next flush. */
+function queueAudit(entry, now = Date.now()) {
+  auditQueue.push({ entry, now });
+}
+
+async function flushAudit() {
+  if (!auditQueue.length) return;
+  const batch = auditQueue.splice(0);
+  try {
+    await update((db) => {
+      for (const { entry, now } of batch) auditLog(db, entry, now);
+    });
+  } catch (error) {
+    console.error(`Өөрчлөлтийн түүх: ${error.message}`);
+  }
+}
+
+/** Any other change request that succeeded: who called what, with a summary of the body that hides secrets and files. */
+function noteCall(req, res, url) {
+  if (!req.me || req.audited || !["POST", "PUT", "DELETE"].includes(req.method) || res.statusCode >= 400 || !AUDITED_PATHS.test(url.pathname)) return;
+  const password = url.pathname.includes("password");
+  queueAudit({ ...actorOf(req.me), action: password ? "password" : "call", method: req.method, path: url.pathname, body: NO_BODY_PATHS.test(url.pathname) ? undefined : bodySummary(req.auditBody), ip: clientIp(req) });
+}
+
+/** A record's name for the log: its first filled-in text field, otherwise its id. */
+function recordLabel(name, item) {
+  const fields = COLLECTIONS[name]?.fields || [];
+  const field = fields.find((entry) => entry.type === "text" && entry.list && item?.[entry.key]) || fields.find((entry) => entry.type === "text" && item?.[entry.key]);
+  return String(field ? item[field.key] : item?.id || "").slice(0, 80);
+}
+
+function auditRecord(db, me, action, name, before, after, now) {
+  const item = after || before;
+  const entry = { ...actorOf(me), action, area: COLLECTIONS[name].label, collection: name, target: item?.id, label: recordLabel(name, item) };
+  if (action === "update") {
+    entry.changes = diffRecords(before, after);
+    if (!Object.keys(entry.changes).length) return;
+  }
+  if (action === "create") entry.changes = diffRecords(null, after);
+  if (action === "delete") Object.assign(entry, snapshotOf(before));
+  auditLog(db, entry, now);
+}
+
+/** The account facts the log compares, card fields flattened so each change shows on its own. */
+function userFacts(user) {
+  const card = user.card || {};
+  return {
+    username: user.username,
+    loginCode: user.loginCode,
+    displayName: user.displayName,
+    title: user.title || "",
+    email: user.email || "",
+    phone: user.phone || "",
+    birthday: user.birthday || "",
+    role: user.role,
+    "card.status": card.status,
+    "card.clearance": card.clearance,
+    "card.idNumber": card.idNumber,
+    "card.classification": card.classification,
+    "card.project": card.project,
+    "card.expires": card.expires,
+    "card.issued": card.issued || "",
+    "card.signature": card.signature || "",
+  };
+}
+
+function auditUser(db, me, action, user, before, now, extra = {}) {
+  const entry = { ...actorOf(me), action, area: "Хэрэглэгч", collection: "users", target: user.id, label: `${user.displayName} (@${user.username})`, ...extra };
+  if (action === "create") entry.changes = diffRecords(null, userFacts(user));
+  if (action === "update") {
+    entry.changes = { ...diffRecords(before, userFacts(user)), ...extra.changes };
+    if (!Object.keys(entry.changes).length) return;
+  }
+  if (action === "delete") Object.assign(entry, { snapshot: userFacts(user), partial: true });
+  auditLog(db, entry, now);
+}
+
 async function sessionUser(req) {
   const token = readCookie(req, SESSION_COOKIE);
   if (!token) return null;
@@ -920,6 +1025,11 @@ function profileFields(body) {
     const email = String(body.email).trim();
     if (email && (email.length > 80 || !/^[^\s@]+@[^\s@]+$/.test(email))) return { error: "И-мэйл буруу" };
     patch.email = email;
+  }
+  if (body.phone !== undefined) {
+    const phone = cleanPhone(body.phone);
+    if (phone === null) return { error: "Утасны дугаар 8–15 оронтой тоо байна (+976… байж болно)" };
+    patch.phone = phone;
   }
   if (body.birthday !== undefined) {
     const birthday = birthdayValue(body.birthday);
@@ -970,6 +1080,7 @@ function hrView(db) {
       displayName: user.displayName,
       title: user.title || "",
       email: user.email || "",
+      phone: user.phone || "",
       birthday: user.birthday || "",
       photo: user.photo || null,
       role: user.role,
@@ -1065,9 +1176,11 @@ async function routeAuth(req, res, url) {
     });
     if (result.error) {
       if (result.status === 401) noteLoginFail(ip);
+      queueAudit({ action: "login-fail", note: `${result.error} · нэвтрэх нэр ${code || "–"}`, ip });
       json(res, result.status, { error: result.error });
       return;
     }
+    queueAudit({ ...actorOf(result.user), action: "login", ip });
     loginFails.delete(ip);
     res.setHeader("Set-Cookie", sessionCookie(result.token, tunneled(req)));
     json(res, 200, { user: result.user });
@@ -1123,8 +1236,6 @@ async function routeAuth(req, res, url) {
   }
   json(res, 404, { error: "Олдсонгүй" });
 }
-
-const NOTICE_TITLE = { plan: "Ээлжийн хуваарь", leave: "Чөлөөний хүсэлт", "leave-ok": "Чөлөөний хүсэлт", "leave-no": "Чөлөөний хүсэлт", card: "ID карт", hse: "ХАБЭА", "pass-ok": "Хөдөлгөөний зөвшөөрөл", "pass-no": "Хөдөлгөөний зөвшөөрөл" };
 
 /** What the phone app's background service needs: sleep-button times, today's steps and new messages. */
 function mobileState(db, uid, now = Date.now()) {
@@ -1413,7 +1524,91 @@ async function routeMe(req, res, url, me) {
     json(res, 200, { user: result.user });
     return;
   }
+  if (url.pathname === "/api/me/alerts" && req.method === "GET") {
+    json(res, 200, await inspect((db) => alertsView(db, me.id)));
+    return;
+  }
+  if (url.pathname === "/api/me/alerts" && req.method === "PUT") {
+    const { prefs, error } = cleanPrefs(await readBody(req));
+    if (error) {
+      json(res, 400, { error });
+      return;
+    }
+    json(
+      res,
+      200,
+      await update((db) => {
+        const record = personalOf(db, me.id);
+        record.alerts = { ...alertPrefs(record), ...prefs };
+        return alertsView(db, me.id);
+      }),
+    );
+    return;
+  }
+  if (url.pathname === "/api/me/alerts/test" && req.method === "POST") {
+    const view = await update((db) => {
+      pushNotice(personalOf(db, me.id), "test", "UMBRELLA-гаас таны сонгосон сувгаар ирсэн туршилтын мэдэгдэл.", Date.now(), "urgent");
+      return alertsView(db, me.id);
+    });
+    setTimeout(deliveryTick, 100);
+    json(res, 200, view);
+    return;
+  }
+  if (url.pathname === "/api/me/push" && (req.method === "POST" || req.method === "DELETE")) {
+    const body = await readBody(req);
+    const result = await update((db) => {
+      const record = personalOf(db, me.id);
+      if (req.method === "DELETE") removeSubscription(record, String(body.endpoint || ""));
+      else {
+        const added = addSubscription(record, body.subscription, { ua: req.headers["user-agent"] });
+        if (added.error) return added;
+      }
+      return alertsView(db, me.id);
+    });
+    json(res, result.error ? 400 : 200, result);
+    return;
+  }
   json(res, 404, { error: "Олдсонгүй" });
+}
+
+/** A person's own notification settings: channel choices, where notices go, and the latest delivery attempts. */
+function alertsView(db, uid) {
+  const user = db.users.find((item) => item.id === uid);
+  const record = db[personalKey(uid)];
+  const config = channelConfig();
+  const vapid = vapidOf(db);
+  return {
+    prefs: alertPrefs(record),
+    email: user?.email || "",
+    phone: user?.phone || "",
+    ready: { push: Boolean(vapid), email: Boolean(config.email), sms: Boolean(config.sms) },
+    vapidKey: vapid?.publicKey || "",
+    devices: (record?.push || []).map(({ endpoint, ua, at }) => ({ endpoint, ua, at })),
+    recent: (db.deliveries || []).filter((item) => item.uid === uid).slice(-5).reverse(),
+  };
+}
+
+let deliveryBusy = false;
+
+/** Sends notices that are due by push, e-mail and SMS; the store is locked only to claim them and to save the results. */
+async function deliveryTick() {
+  if (deliveryBusy) return;
+  deliveryBusy = true;
+  try {
+    const now = Date.now();
+    if (!(await inspect((db) => hasDueDeliveries(db, now)))) return;
+    const config = channelConfig();
+    const { jobs, vapid } = await update((db) => ({ jobs: claimDeliveries(db, config, now), vapid: vapidOf(db) }));
+    if (!jobs.length) return;
+    const results = await Promise.all(jobs.map((job) => sendJob(job, { config, vapid })));
+    await update((db) => {
+      recordDeliveries(db, jobs, results, Date.now());
+    });
+  } catch (error) {
+    console.error(`Мэдэгдэл илгээх: ${error.message}`);
+  } finally {
+    deliveryBusy = false;
+  }
 }
 
 async function routeAdmin(req, res, url, me) {
@@ -1434,7 +1629,7 @@ async function routeAdmin(req, res, url, me) {
       return;
     }
     const role = ROLES.includes(body.role) ? body.role : "user";
-    const fields = profileFields({ displayName: body.displayName || username, title: body.title ?? "", email: body.email ?? "", birthday: body.birthday ?? "" });
+    const fields = profileFields({ displayName: body.displayName || username, title: body.title ?? "", email: body.email ?? "", phone: body.phone ?? "", birthday: body.birthday ?? "" });
     if (fields.error) {
       json(res, 400, { error: fields.error });
       return;
@@ -1442,13 +1637,16 @@ async function routeAdmin(req, res, url, me) {
     const result = await update((db) => {
       if (db.users.some((item) => item.username === username)) return { error: "Энэ хэрэглэгчийн нэр бүртгэлтэй байна" };
       const user = newUser({ username, password: String(body.password), role, ...fields.patch, existing: db.users });
+      if (fields.patch.phone) user.phone = fields.patch.phone;
       const card = cardPatch(body, user.card);
       if (card.error) return { error: card.error };
       if (db.users.some((item) => item.card?.idNumber === card.card.idNumber)) return { error: "Энэ ID дугаар өөр картанд бүртгэлтэй байна" };
       user.card = card.card;
       db.users.push(user);
+      auditUser(db, me, "create", user, null, Date.now());
       return adminView(db);
     });
+    req.audited = true;
     json(res, result.error ? 400 : 200, result);
     return;
   }
@@ -1529,6 +1727,7 @@ async function routeAdmin(req, res, url, me) {
       if (card.error) return { error: card.error };
       if (db.users.some((item) => item.id !== user.id && item.card.idNumber === card.card.idNumber)) return { error: "Энэ ID дугаар өөр картанд бүртгэлтэй байна" };
       if (loginCode && db.users.some((item) => item.id !== user.id && item.loginCode === loginCode)) return { error: "Энэ нэвтрэх нэр өөр хэрэглэгчид олгогдсон байна" };
+      const facts = userFacts(user);
       if (loginCode) user.loginCode = loginCode;
       const before = { role: user.role, card: user.card };
       if (body.role !== undefined) user.role = body.role;
@@ -1550,8 +1749,10 @@ async function routeAdmin(req, res, url, me) {
         user.ver = (user.ver || 0) + 1;
       }
       syncLinkedProfile(db, user);
+      auditUser(db, me, "update", user, facts, Date.now(), body.password ? { changes: { password: ["•••", "шинэчилсэн"] } } : {});
       return { ...adminView(db), self: user.id === me.id ? publicUser(user, db.cardTemplates) : undefined };
     });
+    req.audited = true;
     json(res, result.error ? result.status || 400 : 200, result);
     return;
   }
@@ -1570,12 +1771,191 @@ async function routeAdmin(req, res, url, me) {
       }
       delete db[personalKey(removed.id)];
       if (db.shiftPlans) delete db.shiftPlans[removed.id];
+      auditUser(db, me, "delete", removed, null, Date.now());
       return adminView(db);
     });
+    req.audited = true;
     json(res, result.error ? result.status || 400 : 200, result);
     return;
   }
+  if (await routeAdminSystem(req, res, url, me)) return;
   json(res, 404, { error: "Олдсонгүй" });
+}
+
+/** A Firestore admin error with what usually fixes it. */
+function firestoreHint(message) {
+  if (/403|PERMISSION_DENIED/.test(message)) return `${message}. Service account-д «Cloud Datastore Owner» (эсвэл backupSchedules) эрх олгоно уу.`;
+  if (/FAILED_PRECONDITION|400/.test(message)) return `${message}. Firebase төсөл Blaze (төлбөртэй) багцтай байх шаардлагатай, эсвэл хуваарь аль хэдийн үүссэн байна.`;
+  return message;
+}
+
+async function systemView() {
+  const config = channelConfig();
+  const { everyMs, keep } = backupSettings();
+  const [data, backups] = await Promise.all([
+    inspect((db) => {
+      const people = db.users.filter((user) => user.role !== "whiteking");
+      return {
+        vapid: vapidOf(db),
+        deliveries: (db.deliveries || []).slice(-100).reverse(),
+        contacts: {
+          users: people.length,
+          email: people.filter((user) => user.email).length,
+          phone: people.filter((user) => user.phone).length,
+          push: people.filter((user) => db[personalKey(user.id)]?.push?.length).length,
+        },
+      };
+    }),
+    listBackups(backupDir()),
+  ]);
+  let firestore = { configured: firebaseConfigured() };
+  if (firestore.configured) {
+    try {
+      firestore = { ...firestore, ...(await managedBackups()) };
+    } catch (error) {
+      firestore.error = firestoreHint(error.message);
+    }
+  }
+  return {
+    channels: channelStatus(config, data.vapid),
+    deliveries: data.deliveries,
+    contacts: data.contacts,
+    backups: {
+      dir: path.relative(root, backupDir()) || backupDir(),
+      persistent: !HOSTED || Boolean(process.env.BACKUP_DIR),
+      everyHours: everyMs / 3600000,
+      keep,
+      storage: storageLabel(),
+      list: backups.slice(0, 40),
+    },
+    firestore,
+  };
+}
+
+async function makeBackup(reason) {
+  const text = await inspect((db) => JSON.stringify(db));
+  const dir = backupDir();
+  const item = await writeBackup(text, { dir, reason });
+  await pruneBackups(dir, backupSettings().keep);
+  return item;
+}
+
+let backupBusy = false;
+
+async function backupTick() {
+  if (backupBusy) return;
+  backupBusy = true;
+  try {
+    if (backupDue(await listBackups(backupDir()), backupSettings().everyMs)) {
+      const item = await makeBackup("auto");
+      console.log(`Нөөц хуулбар хадгалагдлаа: ${item.name} (${Math.round(item.size / 1024)} КБ)`);
+    }
+  } catch (error) {
+    console.error(`Нөөцлөлт: ${error.message}`);
+  } finally {
+    backupBusy = false;
+  }
+}
+
+/** Change history, notification channels and backups on the admin's system pages; false when the path is not one. */
+async function routeAdminSystem(req, res, url, me) {
+  const { pathname, searchParams } = url;
+  if (req.method === "GET" && pathname === "/api/admin/system") {
+    json(res, 200, await systemView());
+    return true;
+  }
+  if (req.method === "GET" && pathname === "/api/admin/audit") {
+    const to = DAY_PATTERN.test(searchParams.get("to") || "") ? searchParams.get("to") : localDay(Date.now());
+    const asked = DAY_PATTERN.test(searchParams.get("from") || "") ? searchParams.get("from") : addDays(to, -6);
+    const from = asked > to ? to : asked < addDays(to, -92) ? addDays(to, -92) : asked;
+    const action = AUDIT_ACTIONS.includes(searchParams.get("action")) ? searchParams.get("action") : "";
+    const filters = { from, to, by: String(searchParams.get("by") || "").slice(0, 40), action, q: String(searchParams.get("q") || "").slice(0, 80) };
+    json(
+      res,
+      200,
+      await inspect((db) => ({
+        ...auditList(db, filters),
+        ...filters,
+        days: auditDays(db),
+        users: db.users.map((user) => ({ id: user.id, name: user.displayName, role: user.role })),
+      })),
+    );
+    return true;
+  }
+  const restore = pathname.match(/^\/api\/admin\/audit\/(aud_[a-f0-9]+)\/restore$/);
+  if (restore && req.method === "POST") {
+    const now = Date.now();
+    const result = await update((db) => {
+      const entry = findAudit(db, restore[1]);
+      if (!entry || entry.action !== "delete" || !Object.hasOwn(COLLECTIONS, entry.collection || "")) return { error: "Сэргээх бүртгэл олдсонгүй", status: 404 };
+      if (entry.partial || !entry.snapshot) return { error: "Энэ бүртгэлийн хуулбар бүрэн хадгалагдаагүй тул сэргээх боломжгүй", status: 409 };
+      const outcome = restoreRecord(db, entry.collection, entry.snapshot);
+      if (outcome.error) return outcome;
+      Object.assign(entry, { restoredAt: new Date(now).toISOString(), restoredBy: me.displayName });
+      auditLog(db, { ...actorOf(me), action: "restore", area: entry.area, collection: entry.collection, target: entry.target, label: entry.label, note: "Устгасан бүртгэлийг сэргээв" }, now);
+      return { ok: true };
+    });
+    req.audited = true;
+    json(res, result.error ? result.status || 400 : 200, result);
+    return true;
+  }
+  if (req.method === "POST" && pathname === "/api/admin/backups") {
+    const item = await makeBackup("manual");
+    queueAudit({ ...actorOf(me), action: "backup", note: item.name });
+    req.audited = true;
+    json(res, 200, { item, view: await systemView() });
+    return true;
+  }
+  const file = pathname.match(/^\/api\/admin\/backups\/(umbrella-[\w-]+\.json\.gz)$/);
+  if (file && req.method === "GET") {
+    const data = await readBackup(file[1], backupDir());
+    if (!data) {
+      json(res, 404, { error: "Нөөцийн файл олдсонгүй" });
+      return true;
+    }
+    res.writeHead(200, { "Content-Type": "application/gzip", "Content-Disposition": `attachment; filename="${file[1]}"`, "Content-Length": data.length, "Cache-Control": "no-store" });
+    res.end(data);
+    return true;
+  }
+  if (req.method === "POST" && pathname === "/api/admin/backups/restore") {
+    const name = searchParams.get("name");
+    const buffer = name ? await readBackup(name, backupDir()) : await readRaw(req, MAX_UPLOAD);
+    if (!buffer?.length) {
+      json(res, name ? 404 : 400, { error: name ? "Нөөцийн файл олдсонгүй" : "Файл хоосон байна" });
+      return true;
+    }
+    const parsed = parseBackup(buffer);
+    if (parsed.error) {
+      json(res, 400, { error: parsed.error });
+      return true;
+    }
+    const before = await makeBackup("restore");
+    const now = Date.now();
+    await replaceAll((db) => {
+      const next = mergeRestore(db, parsed.db);
+      auditLog(next, { ...actorOf(me), action: "restore-db", note: `${name || "Оруулсан файл"}-аас сэргээв. Өмнөх төлөв: ${before.name}` }, now);
+      return next;
+    });
+    req.audited = true;
+    console.log(`Өгөгдлийг нөөцөөс сэргээлээ (${name || "оруулсан файл"}); өмнөх төлөв ${before.name}`);
+    json(res, 200, { ok: true, before: before.name });
+    return true;
+  }
+  if (req.method === "POST" && pathname === "/api/admin/backups/firestore") {
+    if (!firebaseConfigured()) {
+      json(res, 400, { error: "Firestore тохируулаагүй тул өгөгдөл дотоод файлд хадгалагдаж байна" });
+      return true;
+    }
+    try {
+      await createDailyBackups(7);
+    } catch (error) {
+      json(res, 502, { error: firestoreHint(error.message) });
+      return true;
+    }
+    json(res, 200, { view: await systemView() });
+    return true;
+  }
+  return false;
 }
 
 const server = createServer(async (req, res) => {
@@ -1583,6 +1963,7 @@ const server = createServer(async (req, res) => {
   try {
     if (url.pathname.startsWith("/api/")) {
       await routeApi(req, res, url);
+      noteCall(req, res, url);
       return;
     }
     await routeFile(res, url.pathname);
@@ -2091,15 +2472,19 @@ async function routeRecords(req, res, me, base, pathname, allowed, viewOf) {
   const body = req.method === "POST" || req.method === "PUT" ? await readBody(req, 700_000) : {};
   const result = await update((db) => {
     ensureMine(db);
+    const before = id ? structuredClone(db[COLLECTIONS[name].area][name].find((item) => item.id === id) || null) : null;
     let outcome;
-    if (req.method === "POST" && !id) outcome = createRecord(db, name, body, { by: me.id, now });
-    else if (req.method === "PUT" && id) outcome = updateRecord(db, name, id, body, { by: me.id, now });
-    else if (req.method === "DELETE" && id) outcome = deleteRecord(db, name, id);
+    let action;
+    if (req.method === "POST" && !id) [action, outcome] = ["create", createRecord(db, name, body, { by: me.id, now })];
+    else if (req.method === "PUT" && id) [action, outcome] = ["update", updateRecord(db, name, id, body, { by: me.id, now })];
+    else if (req.method === "DELETE" && id) [action, outcome] = ["delete", deleteRecord(db, name, id)];
     else outcome = { error: "Буруу хүсэлт", status: 405 };
     if (outcome.error) return outcome;
+    auditRecord(db, me, action, name, action === "delete" ? outcome.item : before, action === "delete" ? null : outcome.item, now);
     if (mineDue(db, now)) mineTick(db, now);
     return { item: outcome.item, view: viewOf(db, now) };
   });
+  req.audited = true;
   json(res, result.error ? result.status || 400 : 200, result);
   return true;
 }
@@ -2391,6 +2776,7 @@ async function routeApi(req, res, url) {
       json(res, 401, { error: "Нэвтэрнэ үү" });
       return;
     }
+    req.me = me;
     if (me.role === "whiteking" && !STATION_PATHS.some((pattern) => pattern.test(url.pathname))) {
       json(res, 403, { error: "White Queen станц зөвхөн ирц, мэдэгдлийн хэсгийг ашиглана" });
       return;
@@ -2968,6 +3354,7 @@ update((db) => {
   ensureMenu(db);
   if (migrateSharedHealth(db)) console.log("Эрүүл мэндийн нийтийн өгөгдлийг хэрэглэгч бүрт тусгаарлалаа.");
   ensureWhiteKing(db);
+  ensureVapid(db);
   const demo = HOSTED ? seedDemo(db) : null;
   if (demo) console.log(`Туршилтын өгөгдөл: ${demo.users} шинэ хэрэглэгч, ${demo.staff} ажилтны ${demo.scans} ирцийн бүртгэл, ${demo.dishes} хоол.`);
   ensureMine(db);
@@ -2992,10 +3379,15 @@ update((db) => {
     whitekingTick();
     restTick();
     mineTimer();
+    deliveryTick();
+    setTimeout(backupTick, 20 * 1000);
   });
 setInterval(whitekingTick, 10 * 1000);
 setInterval(restTick, 60 * 1000);
 setInterval(mineTimer, 10 * 1000);
+setInterval(deliveryTick, 5 * 1000);
+setInterval(flushAudit, 3 * 1000);
+setInterval(backupTick, 10 * 60 * 1000);
 
 if (HOSTED && !firebaseConfigured()) {
   console.error("FIREBASE_SERVICE_ACCOUNT тохируулаагүй байна. Интернэт сервер анхны нууц үгтэй хоосон өгөгдлөөр асахгүй.");

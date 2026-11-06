@@ -62,6 +62,7 @@ import { FLEET_VIEWS, fleetReset, fleetStart, fleetStop, fleetView, initFleet } 
 import { PASS_KINDS, PASS_ROLES, PASS_SHORT } from "./passcore.js";
 import { PASS_VIEWS, initPasses, passIco, passStatusBadge, passTrail, passWhen, passesReset, passesStart, passesStop, passesView } from "./passes.js";
 import { enterStage } from "./motion.js";
+import { SYSTEM_VIEWS, alertsPanel, auditView, initSystem, systemReset, systemStart, systemView } from "./system.js";
 
 // Google Map Tiles API is not enabled on the project yet; set to true once it is.
 const TRAFFIC_ENABLED = false;
@@ -134,7 +135,7 @@ const ROLES = ["user", "hr", "kitchen", "admin", "whiteking", "master", "enginee
 /** The page each management role lands on. */
 const ROLE_HOME = { master: "mine", engineer: "fleet", campmgr: "camp", security: "guard", finance: "finance", director: "exec", shipmgr: "coal", envmgr: "env", maint: "maint", hsemgr: "hse" };
 const STAFF_ROLES = ["user", "hr", "kitchen"];
-const ADMIN_VIEWS = ["users", "account", "card", "whiteking"];
+const ADMIN_VIEWS = ["users", "account", "card", "whiteking", "audit", "system"];
 const HR_VIEWS = ["staff", "today"];
 const KITCHEN_VIEWS = ["menu"];
 
@@ -2299,6 +2300,7 @@ function meForm(user) {
       <label>Нэр (картан дээр гарна)<input name="displayName" maxlength="40" required value="${esc(user.displayName)}" /></label>
       <label>Албан тушаал<input name="title" maxlength="60" value="${esc(user.title)}" /></label>
       <label>И-мэйл<input name="email" type="email" maxlength="80" value="${esc(user.email)}" /></label>
+      <label>Утас (SMS)<input name="phone" type="tel" maxlength="20" placeholder="99112233" value="${esc(user.phone || "")}" /></label>
       <button class="primary" type="submit">Хадгалах</button>
     </form>`;
 }
@@ -2341,6 +2343,7 @@ function userProfileView() {
           </dl>
         </section>
         ${appLinkPanel()}
+        ${alertsPanel()}
         ${passwordForm()}
       </div>
     </div>`;
@@ -2476,6 +2479,7 @@ function adminEditor(user) {
           <label class="wide">Нэр (картан дээр гарна)<input name="displayName" maxlength="40" required value="${esc(user.displayName)}" /></label>
           <label>Албан тушаал<input name="title" maxlength="60" value="${esc(user.title)}" /></label>
           <label>И-мэйл<input name="email" type="email" maxlength="80" value="${esc(user.email)}" /></label>
+          <label>Утас (SMS)<input name="phone" type="tel" maxlength="20" placeholder="99112233" value="${esc(user.phone || "")}" /></label>
           <label>Төрсөн өдөр<input name="birthday" type="date" max="${localDate(new Date().toISOString())}" value="${esc(user.birthday || "")}" /></label>
           <label>Эрх<select name="role">${options(ROLES, user.role, (value) => ROLE_LABEL[value])}</select></label>
           <label>Төлөв<select name="status">${options(CARD_STATUSES, card.status)}</select></label>
@@ -2903,6 +2907,7 @@ function adminCreateForm() {
           <label>Нэр<input name="displayName" maxlength="40" required /></label>
           <label>Албан тушаал<input name="title" maxlength="60" /></label>
           <label>И-мэйл<input name="email" type="email" maxlength="80" /></label>
+          <label>Утас (SMS)<input name="phone" type="tel" maxlength="20" placeholder="99112233" /></label>
           <label>Төрсөн өдөр<input name="birthday" type="date" max="${localDate(new Date().toISOString())}" /></label>
           <label>Эрх<select name="role">${options(ROLES, "user", (value) => ROLE_LABEL[value])}</select></label>
           <label>Ангилал<input name="classification" maxlength="32" value="АЖИЛТАН" required /></label>
@@ -4306,6 +4311,7 @@ function adminProfileView() {
       </section>
       ${meForm(me)}
       ${appLinkPanel()}
+      ${alertsPanel()}
       ${passwordForm()}
     </div>`;
 }
@@ -5528,6 +5534,11 @@ function render() {
     startStationCamera();
     return;
   }
+  if (SYSTEM_VIEWS.includes(state.view)) {
+    stage.innerHTML = state.view === "audit" ? auditView() : systemView();
+    systemStart(state.view);
+    return;
+  }
   if (state.view === "profile") stage.innerHTML = isAdmin() ? adminProfileView() : userProfileView();
   if (state.view === "whiteking") {
     state.wkPainted = {};
@@ -6585,6 +6596,7 @@ function showLogin(message = "") {
   masterReset();
   fleetReset();
   passesReset();
+  systemReset();
   wkVoice.queue.length = 0;
   closeModal(true);
   state.wk?.wakeLock?.release().catch(() => {});
@@ -6690,6 +6702,7 @@ if (location.pathname === "/queen" && "serviceWorker" in navigator) navigator.se
 initMine({ stage, state, api, render, openModal, closeModal, toast });
 initFleet({ stage, state, api, render, openModal, closeModal, toast });
 initPasses({ stage, state, api, render, openModal, closeModal, toast });
+initSystem({ stage, state, api, render, toast, roleLabel: ROLE_LABEL });
 
 async function boot() {
   let user;
