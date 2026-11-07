@@ -422,7 +422,7 @@ function ring(pct) {
   return `<div class="ring" style="--pct:${value}"><span>${value}%</span></div>`;
 }
 
-const NOTICE_ICON = { card: "warn", "leave-ok": "check", "leave-no": "cross", plan: "calendar", "pass-ok": "check", "pass-no": "cross", hse: "warn" };
+const NOTICE_ICON = { card: "warn", "leave-ok": "check", "leave-no": "cross", plan: "calendar", "pass-ok": "check", "pass-no": "cross", hse: "warn", blast: "warn" };
 const LATE_GRACE_MS = 5 * 60 * 1000;
 
 function agoLabel(iso) {
@@ -524,7 +524,7 @@ function todayNotices(live) {
   for (const notice of [...(live.notices || [])].reverse()) {
     items.push(`<li class="notice is-${esc(notice.kind)}">
       <span class="notice-ico">${icon(NOTICE_ICON[notice.kind] || "bell")}</span>
-      <div><b>${esc(notice.text)}</b><small>${agoLabel(notice.at)}</small></div>
+      <div><b>${esc(notice.text)}</b><small>${notice.kind === "blast" ? "ХАБЭА · " : ""}${agoLabel(notice.at)}</small></div>
       <button class="icon-btn" type="button" data-action="notice-seen" data-id="${esc(notice.id)}" aria-label="Хаах" title="Хаах">${icon("cross")}</button>
     </li>`);
   }

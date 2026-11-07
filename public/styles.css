@@ -2292,7 +2292,7 @@ b .leave-type { padding: 0 6px; }
 .big-alert p { margin: 4px 0 0; font-size: 15px; }
 .notices { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .notice { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--tone); border-radius: 10px; background: var(--surface); animation: row-in 0.28s ease-out both; animation-delay: calc(var(--i, 0) * 40ms); }
-.notice.is-card, .notice.is-leave-no { --tone: var(--st-absent); }
+.notice.is-card, .notice.is-leave-no, .notice.is-blast { --tone: var(--st-absent); }
 .notice.is-leave-ok { --tone: var(--st-ok); }
 .notice.is-plan { --tone: var(--st-extra); }
 .notice.is-announce { --tone: var(--st-leave); }

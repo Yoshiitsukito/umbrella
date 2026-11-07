@@ -6,6 +6,7 @@ import { ensureWhiteKing } from "../lib/whiteking.mjs";
 import {
   checkMuster,
   createRecord,
+  deleteRecord,
   ensureMine,
   masterView,
   mineHold,
@@ -207,6 +208,25 @@ test("blast warnings count down on the station and close the zone afterwards", (
   mineTick(db, at + 16 * 60000);
   assert.equal(blast.status, "done");
   assert.ok(db.whiteking.queue.some((item) => item.text.includes("бүс нээгдлээ")));
+});
+
+test("a new, moved or cancelled blast reaches every account's phone at once", () => {
+  const db = baseDb();
+  const blastNotices = (uid) => (db[personalKey(uid)]?.notices || []).filter((item) => item.kind === "blast");
+  const at = new Date(NOW + 3 * H).toISOString();
+  const { item } = add(db, "blasts", { at, place: "Блок 7", radius: 400 });
+  for (const uid of ["usr_admin", "usr_a", "usr_b", "usr_hr"]) {
+    const [notice] = blastNotices(uid);
+    assert.match(notice.text, /Тэсэлгээ хийгдэнэ: 11\.01 13:00, Блок 7\. 400 м/);
+    assert.equal(notice.level, "urgent");
+  }
+  assert.equal(blastNotices("usr_master").length, 0, "the one who added it is not told");
+  updateRecord(db, "blasts", item.id, { ...item, notes: "64 цооног" }, { by: master(db).id, now: NOW });
+  assert.equal(blastNotices("usr_a").length, 1, "a note alone does not resend");
+  updateRecord(db, "blasts", item.id, { ...item, place: "Блок 8" }, { by: master(db).id, now: NOW });
+  assert.match(blastNotices("usr_a").at(-1).text, /өөрчлөгдлөө: .*Блок 8/);
+  deleteRecord(db, "blasts", item.id, { by: master(db).id, now: NOW });
+  assert.match(blastNotices("usr_a").at(-1).text, /цуцлагдлаа: 11\.01 13:00, Блок 8/);
 });
 
 test("weather over a threshold stops work until it settles", () => {

@@ -527,6 +527,14 @@ async function send(path, method = "POST", body = {}) {
   return data;
 }
 
+/** Mirrors the server's blastNotice(): whether saving this blast sent everyone a notice. */
+function blastAnnounced(data, previous) {
+  const wasPlanned = previous?.status === "planned";
+  if (data.status === "planned" && !wasPlanned) return true;
+  if (data.status === "cancelled") return wasPlanned;
+  return data.status === "planned" && (Date.parse(previous.at) !== Date.parse(data.at) || previous.place !== data.place || Number(previous.radius) !== Number(data.radius));
+}
+
 async function attempt(work) {
   try {
     return await work();
@@ -1369,6 +1377,7 @@ function openForm(name, item = null, preset = {}) {
     try {
       const data = formValues(form, schema.fields);
       await send(item ? `${apiBase()}/c/${name}/${item.id}` : `${apiBase()}/c/${name}`, item ? "PUT" : "POST", data);
+      if (name === "blasts" && blastAnnounced(data, item)) ctx.toast("ХАБЭА · Тэсэлгээ", "Бүх хэрэглэгчид яаралтай мэдэгдэл илгээгдлээ.");
       ctx.closeModal(true);
       setTimeout(() => paint(true), 260);
     } catch (error) {

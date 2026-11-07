@@ -2477,7 +2477,7 @@ async function routeRecords(req, res, me, base, pathname, allowed, viewOf) {
     let action;
     if (req.method === "POST" && !id) [action, outcome] = ["create", createRecord(db, name, body, { by: me.id, now })];
     else if (req.method === "PUT" && id) [action, outcome] = ["update", updateRecord(db, name, id, body, { by: me.id, now })];
-    else if (req.method === "DELETE" && id) [action, outcome] = ["delete", deleteRecord(db, name, id)];
+    else if (req.method === "DELETE" && id) [action, outcome] = ["delete", deleteRecord(db, name, id, { by: me.id, now })];
     else outcome = { error: "Буруу хүсэлт", status: 405 };
     if (outcome.error) return outcome;
     auditRecord(db, me, action, name, action === "delete" ? outcome.item : before, action === "delete" ? null : outcome.item, now);
